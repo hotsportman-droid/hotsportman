@@ -1,6 +1,5 @@
-
-import React, { useState, useEffect } from 'react';
-import { BrainIcon } from './icons';
+import React, { useState, useEffect, useRef } from 'react';
+import { BrainIcon, MicIcon } from './icons';
 import { Modal } from './Modal';
 import { AdBanner } from './AdBanner';
 
@@ -13,6 +12,10 @@ export const SymptomAnalyzer: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [dailyUsage, setDailyUsage] = useState(0);
+  
+  // Voice Input States
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     // Load usage data from local storage
@@ -29,6 +32,51 @@ export const SymptomAnalyzer: React.FC = () => {
       setDailyUsage(storedCount);
     }
   }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+      return;
+    }
+
+    // Check browser support
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setError('เบราว์เซอร์ของคุณไม่รองรับการสั่งงานด้วยเสียง');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'th-TH'; // ตั้งค่าเป็นภาษาไทย
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setError(null);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error', event.error);
+      setError('เกิดข้อผิดพลาดในการรับเสียง: ' + event.error);
+      setIsListening(false);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setSymptoms((prev) => prev + (prev ? ' ' : '') + transcript);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
 
   const handleAnalyze = async () => {
     if (!symptoms.trim()) {
@@ -118,7 +166,7 @@ export const SymptomAnalyzer: React.FC = () => {
           </p>
 
           <div className="space-y-4 flex-grow flex flex-col">
-            <div className="flex-grow">
+            <div className="flex-grow relative">
               <label htmlFor="symptoms" className="block text-sm font-medium text-slate-700 mb-2">
                 อาการของคุณ (เช่น ปวดหัว, มีไข้, ไอ)
               </label>
@@ -130,15 +178,28 @@ export const SymptomAnalyzer: React.FC = () => {
                   <li><span className="font-semibold">อาการร่วม:</span> มีอาการอื่นร่วมด้วยหรือไม่</li>
                 </ul>
               </div>
-              <textarea
-                id="symptoms"
-                rows={5}
-                value={symptoms}
-                onChange={(e) => setSymptoms(e.target.value)}
-                className="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="ตัวอย่าง: ปวดหัวข้างขวาแบบตุบๆ มา 2 วันแล้ว มีอาการคลื่นไส้ร่วมด้วย..."
-                aria-label="Symptom input"
-              />
+              <div className="relative">
+                <textarea
+                  id="symptoms"
+                  rows={5}
+                  value={symptoms}
+                  onChange={(e) => setSymptoms(e.target.value)}
+                  className="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm pr-12"
+                  placeholder="ตัวอย่าง: ปวดหัวข้างขวาแบบตุบๆ มา 2 วันแล้ว มีอาการคลื่นไส้ร่วมด้วย... (กดไอคอนไมค์เพื่อพูดได้)"
+                  aria-label="Symptom input"
+                />
+                <button
+                  onClick={toggleListening}
+                  className={`absolute bottom-3 right-3 p-2 rounded-full transition-all ${
+                    isListening 
+                      ? 'bg-red-500 text-white animate-pulse ring-2 ring-red-300' 
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                  title={isListening ? "กำลังฟัง... คลิกเพื่อหยุด" : "คลิกเพื่อพูด"}
+                >
+                  <MicIcon className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             <button
               onClick={openConfirmationModal}

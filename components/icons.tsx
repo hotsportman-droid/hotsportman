@@ -167,3 +167,9 @@ export const LinkIcon: React.FC<{ className?: string }> = ({ className }) => (
     <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.72-1.71"></path>
   </IconWrapper>
 );
+
+export const MicIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <IconWrapper className={className}>
+    <path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+  </IconWrapper>
+);
