@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { BrainIcon } from './icons';
 import { Modal } from './Modal';
@@ -48,7 +49,7 @@ export const SymptomAnalyzer: React.FC = () => {
     setResult('');
 
     try {
-      // Call our new secure backend function
+      // Call our secure backend function (Groq)
       const response = await fetch('/api/analyze-symptoms', {
         method: 'POST',
         headers: {
