@@ -13,65 +13,77 @@ export const NearbyHospitals: React.FC = () => {
     setIsLoading(true);
     setError(null);
 
-    // 1. Open window immediately to bypass popup blockers
-    const newWindow = window.open('', '_blank');
+    // Check if the user is on a mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    let newWindow: Window | null = null;
 
-    if (!newWindow) {
-        setIsLoading(false);
-        setError('Pop-up ถูกบล็อก กรุณาอนุญาตให้เปิดหน้าต่างใหม่');
-        return;
+    // 1. Desktop: Open window immediately to bypass popup blockers
+    // Mobile: Don't open a new window, we'll redirect the current one to trigger the native app intent
+    if (!isMobile) {
+        newWindow = window.open('', '_blank');
+
+        if (!newWindow) {
+            setIsLoading(false);
+            setError('Pop-up ถูกบล็อก กรุณาอนุญาตให้เปิดหน้าต่างใหม่');
+            return;
+        }
+
+        // Show loading state in the new window while fetching location
+        newWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="th">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>กำลังค้นหา...</title>
+            <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background-color: #f8fafc;
+                color: #334155;
+            }
+            .spinner {
+                width: 50px;
+                height: 50px;
+                border: 5px solid #e2e8f0;
+                border-top: 5px solid #4f46e5;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin-bottom: 20px;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            h2 { margin: 0 0 10px 0; font-size: 18px; }
+            p { margin: 0; color: #64748b; font-size: 14px; }
+            </style>
+        </head>
+        <body>
+            <div class="spinner"></div>
+            <h2>กำลังระบุตำแหน่งของคุณ</h2>
+            <p>เพื่อค้นหาสถานพยาบาลที่ใกล้ที่สุด...</p>
+        </body>
+        </html>
+        `);
+        newWindow.document.close();
     }
-
-    // Show loading state in the new window while fetching location
-    newWindow.document.write(`
-      <!DOCTYPE html>
-      <html lang="th">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>กำลังค้นหา...</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f8fafc;
-            color: #334155;
-          }
-          .spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #e2e8f0;
-            border-top: 5px solid #4f46e5;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
-          }
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-          h2 { margin: 0 0 10px 0; font-size: 18px; }
-          p { margin: 0; color: #64748b; font-size: 14px; }
-        </style>
-      </head>
-      <body>
-        <div class="spinner"></div>
-        <h2>กำลังระบุตำแหน่งของคุณ</h2>
-        <p>เพื่อค้นหาสถานพยาบาลที่ใกล้ที่สุด...</p>
-      </body>
-      </html>
-    `);
-    newWindow.document.close();
 
     const fallbackToGeneralSearch = () => {
        const query = encodeURIComponent("โรงพยาบาล คลินิก และร้านขายยา ใกล้ฉัน");
        const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
-       newWindow.location.href = url;
+       
+       if (isMobile) {
+           window.location.href = url;
+       } else if (newWindow) {
+           newWindow.location.href = url;
+       }
        setIsLoading(false);
     };
 
@@ -88,8 +100,13 @@ export const NearbyHospitals: React.FC = () => {
         const query = encodeURIComponent("โรงพยาบาล คลินิก และร้านขายยา");
         const url = `https://www.google.com/maps/search/?api=1&query=${query}&center=${latitude},${longitude}`;
         
-        // 2. Redirect the pre-opened window to Google Maps
-        newWindow.location.href = url;
+        if (isMobile) {
+            // Direct redirection on mobile typically triggers the app
+            window.location.href = url;
+        } else if (newWindow) {
+            // Redirect pre-opened window on desktop
+            newWindow.location.href = url;
+        }
         
         setIsLoading(false);
       },
