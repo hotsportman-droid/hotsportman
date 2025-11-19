@@ -5,7 +5,7 @@ import { BMICalculator } from './components/BMICalculator';
 import { SymptomAnalyzer } from './components/SymptomAnalyzer';
 import { NearbyHospitals } from './components/NearbyHospitals';
 import { HEALTH_CHECKS } from './constants';
-import { StethoscopeIcon, DownloadIcon, ShareIcon, ShareIcon as ShareIconSmall } from './components/icons';
+import { StethoscopeIcon, DownloadIcon, ShareIcon, ShareIcon as ShareIconSmall, SettingsIcon } from './components/icons';
 import { ShareModal } from './components/ShareModal';
 import { Modal } from './components/Modal';
 
@@ -23,7 +23,15 @@ const App: React.FC = () => {
   const [totalUsage, setTotalUsage] = useState(BASE_USAGE_COUNT);
   const [activeUsers, setActiveUsers] = useState(842); // Simulate active users
 
+  // Settings State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+
   useEffect(() => {
+    // Load saved API Key on mount to state (for display purposes only if needed)
+    const savedKey = localStorage.getItem('shc_api_key');
+    if (savedKey) setApiKeyInput(savedKey);
+
     // Simulate active users fluctuation
     const interval = setInterval(() => {
       setActiveUsers(prev => {
@@ -124,6 +132,21 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSaveSettings = () => {
+    if (apiKeyInput.trim()) {
+      localStorage.setItem('shc_api_key', apiKeyInput.trim());
+      alert('บันทึกการตั้งค่าเรียบร้อยครับ');
+      setIsSettingsOpen(false);
+      window.location.reload(); // Reload to ensure components pick up the new key
+    } else {
+        // If empty, allow clearing
+        localStorage.removeItem('shc_api_key');
+        alert('ลบการตั้งค่าเรียบร้อย กลับไปใช้ค่าเริ่มต้น');
+        setIsSettingsOpen(false);
+        window.location.reload();
+    }
+  };
+
   const handleToggle = (key: string) => {
     setOpenAccordion(prevKey => (prevKey === key ? null : key));
   };
@@ -158,6 +181,15 @@ const App: React.FC = () => {
                     <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
                     {activeUsers.toLocaleString()} ใช้งานอยู่
                 </div>
+                
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+                  aria-label="ตั้งค่าระบบ"
+                >
+                  <SettingsIcon className="w-6 h-6" />
+                </button>
+
                 <button
                   onClick={handleShare}
                   className="flex items-center space-x-2 px-4 py-2 bg-slate-200 text-slate-800 text-sm font-semibold rounded-lg shadow-sm hover:bg-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all"
@@ -267,6 +299,56 @@ const App: React.FC = () => {
       </div>
       <ShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} />
       
+      {/* Settings Modal */}
+      <Modal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)}>
+         <div className="text-center p-2">
+             <div className="w-12 h-12 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                 <SettingsIcon className="w-6 h-6" />
+             </div>
+             <h3 className="text-xl font-bold text-slate-800 mb-2">
+                 ตั้งค่าระบบ (สำหรับเจ้าของ)
+             </h3>
+             <p className="text-sm text-slate-500 mb-4">
+                 หากแอปแจ้งเตือนว่าไม่ได้เชื่อมต่อ ต้องใส่ Google API Key เพื่อเปิดใช้งาน AI ครับ
+             </p>
+             
+             <a 
+                href="https://aistudio.google.com/app/apikey" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block w-full py-3 px-4 mb-6 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-sm font-bold hover:bg-indigo-100 transition-colors flex items-center justify-center"
+             >
+                <span className="mr-2">🔑</span> กดที่นี่เพื่อรับ API Key ฟรี
+             </a>
+             
+             <div className="text-left mb-4">
+                 <label className="block text-sm font-medium text-slate-700 mb-1">วาง API Key ที่นี่</label>
+                 <input 
+                    type="password" 
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
+                 />
+             </div>
+             
+             <div className="flex gap-3">
+                <button
+                    onClick={() => setIsSettingsOpen(false)}
+                    className="flex-1 bg-slate-200 text-slate-800 font-bold py-2 rounded-lg hover:bg-slate-300 transition-colors"
+                >
+                    ปิด
+                </button>
+                <button
+                    onClick={handleSaveSettings}
+                    className="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                    บันทึก
+                </button>
+             </div>
+         </div>
+      </Modal>
+
       {/* Install Instruction Modal */}
       <Modal isOpen={isInstallInstructionOpen} onClose={() => setIsInstallInstructionOpen(false)}>
          <div className="text-center p-2">
