@@ -6,16 +6,19 @@ import { NearbyHospitals } from './components/NearbyHospitals';
 import { HEALTH_CHECKS } from './constants';
 import { StethoscopeIcon, DownloadIcon, ShareIcon } from './components/icons';
 import { ShareModal } from './components/ShareModal';
+import { Modal } from './components/Modal';
 
 const App: React.FC = () => {
   const [openAccordion, setOpenAccordion] = React.useState<string | null>('pulse-check');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
+      setIsInstallModalOpen(true);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -31,6 +34,7 @@ const App: React.FC = () => {
       const { outcome } = await deferredPrompt.userChoice;
       console.log(`User response to the install prompt: ${outcome}`);
       setDeferredPrompt(null);
+      setIsInstallModalOpen(false);
     }
   };
 
@@ -186,6 +190,35 @@ const App: React.FC = () => {
         </footer>
       </div>
       <ShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} />
+      
+      <Modal isOpen={isInstallModalOpen} onClose={() => setIsInstallModalOpen(false)}>
+        <div className="text-center">
+          <h3 className="text-xl font-bold text-slate-800">ติดตั้งแอปพลิเคชัน</h3>
+          <div className="mt-4 mb-4 flex justify-center">
+             <div className="p-4 bg-indigo-50 rounded-full ring-4 ring-indigo-50">
+                <DownloadIcon className="w-8 h-8 text-indigo-600" />
+             </div>
+          </div>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            เพิ่ม <strong>"Self Health Check"</strong> ไว้ที่หน้าจอหลัก<br/>
+            เพื่อการเข้าถึงที่สะดวกรวดเร็วและใช้งานได้ดียิ่งขึ้น
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <button
+              onClick={() => setIsInstallModalOpen(false)}
+              className="px-5 py-2.5 rounded-lg bg-slate-100 text-slate-600 font-semibold hover:bg-slate-200 transition-colors text-sm"
+            >
+              ไว้ทีหลัง
+            </button>
+            <button
+              onClick={handleInstallClick}
+              className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-all text-sm shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transform hover:-translate-y-0.5"
+            >
+              ติดตั้งเลย
+            </button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 };
