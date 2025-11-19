@@ -43,7 +43,7 @@ export const SymptomAnalyzer: React.FC = () => {
     };
   }, []);
 
-  const toggleListening = () => {
+  const toggleListening = async () => {
     if (isListening) {
       if (recognitionRef.current) {
         recognitionRef.current.stop();
@@ -57,6 +57,21 @@ export const SymptomAnalyzer: React.FC = () => {
     if (!SpeechRecognition) {
       setError('เบราว์เซอร์ของคุณไม่รองรับการสั่งงานด้วยเสียง');
       return;
+    }
+    
+    setError(null);
+
+    // Explicitly request microphone permission to ensure prompt appears and handle denial gracefully
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Permission granted, stop the stream immediately as SpeechRecognition handles its own input
+        stream.getTracks().forEach(track => track.stop());
+      } catch (err) {
+        console.error('Microphone permission denied:', err);
+        setError('⚠️ ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณากดที่ไอคอนรูปกุญแจ 🔒 ที่แถบ URL หรือเมนูการตั้งค่าเว็บไซต์ แล้วเลือก "อนุญาต" (Allow) การใช้ไมโครโฟน');
+        return;
+      }
     }
 
     const recognition = new SpeechRecognition();
@@ -91,7 +106,12 @@ export const SymptomAnalyzer: React.FC = () => {
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    try {
+        recognition.start();
+    } catch (e) {
+        console.error("Failed to start recognition", e);
+        setError("ไม่สามารถเริ่มต้นระบบรับเสียงได้");
+    }
   };
 
   const toggleSpeaking = () => {

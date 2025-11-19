@@ -15,15 +15,8 @@ const App: React.FC = () => {
   const [isInstallInstructionOpen, setIsInstallInstructionOpen] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
-  const [isInAppBrowser, setIsInAppBrowser] = useState(false);
 
   useEffect(() => {
-    // Check for In-App Browser (LINE, Facebook, Instagram, etc.)
-    const ua = navigator.userAgent || navigator.vendor || (window as any).opera;
-    // Common in-app browser identifiers
-    const isInApp = /Line\/|FBAN|FBAV|Instagram|Twitter/i.test(ua);
-    setIsInAppBrowser(isInApp);
-
     // Check if running in standalone mode (installed)
     const checkStandalone = () => {
       const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
@@ -80,14 +73,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
-      alert('คัดลอกลิงก์เรียบร้อย กรุณานำไปวางใน Browser หลักของเครื่อง (Chrome/Safari)');
-    }).catch(() => {
-      alert('ไม่สามารถคัดลอกลิงก์ได้');
-    });
-  };
-
   const handleToggle = (key: string) => {
     setOpenAccordion(prevKey => (prevKey === key ? null : key));
   };
@@ -104,35 +89,6 @@ const App: React.FC = () => {
       check.title !== 'การวัดชีพจร (Pulse Rate)' &&
       check.title !== 'การสังเกตการหายใจ (Respiration)'
   );
-
-  if (isInAppBrowser) {
-    return (
-      <div className="fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-24 h-24 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mb-8 shadow-sm">
-          <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-          </svg>
-        </div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-4">กรุณาเปิดในเบราว์เซอร์หลัก</h2>
-        <p className="text-slate-600 mb-8 max-w-sm leading-relaxed">
-          เบราว์เซอร์ในแอป (In-App Browser) นี้อาจไม่รองรับการเข้าถึงไมโครโฟนซึ่งจำเป็นสำหรับฟีเจอร์วิเคราะห์อาการ
-          <br/><br/>
-          กรุณากดที่เมนู <span className="font-bold bg-slate-100 px-1 rounded">...</span> หรือ <span className="font-bold bg-slate-100 px-1 rounded">แชร์</span> ที่มุมจอ 
-          <br/>แล้วเลือก <strong>"เปิดในเบราว์เซอร์" (Open in Browser)</strong> หรือ <strong>"Open in Safari/Chrome"</strong>
-        </p>
-        <button 
-          onClick={handleCopyLink}
-          className="px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center"
-        >
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-          คัดลอกลิงก์
-        </button>
-        <p className="mt-6 text-xs text-slate-400">
-          System Browser: Safari (iOS), Chrome (Android)
-        </p>
-      </div>
-    );
-  }
 
   return (
     <>
