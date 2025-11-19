@@ -5,7 +5,7 @@ import { Modal } from './Modal';
 import { AdBanner } from './AdBanner';
 import { GoogleGenAI } from '@google/genai';
 
-const MAX_DAILY_LIMIT = 10; // เพิ่มโควต้าต่อวันให้มากขึ้นเล็กน้อย
+const MAX_DAILY_LIMIT = 20; // เพิ่มโควต้าให้เพียงพอสำหรับการทดสอบ
 
 interface SymptomAnalyzerProps {
   onAnalysisSuccess?: () => void;
@@ -174,10 +174,12 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
 
   // ฟังก์ชันช่วย Retry (ลองใหม่) เมื่อเจอ Error
   const generateContentWithRetry = async (ai: GoogleGenAI, params: any, maxRetries = 3) => {
+    let lastError;
     for (let i = 0; i < maxRetries; i++) {
       try {
         return await ai.models.generateContent(params);
       } catch (error: any) {
+        lastError = error;
         const isRateLimit = error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('503');
         
         if (isRateLimit && i < maxRetries - 1) {
@@ -191,9 +193,16 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
         throw error;
       }
     }
+    throw lastError;
   };
 
   const handleAnalyze = async () => {
+    if (!navigator.onLine) {
+      setError('ไม่พบสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อ');
+      setIsModalOpen(false);
+      return;
+    }
+
     if (!symptoms.trim()) {
       setError('กรุณาป้อนอาการของคุณ');
       setIsModalOpen(false);
@@ -218,8 +227,11 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
     }
 
     try {
+      if (!process.env.API_KEY) {
+        throw new Error('ไม่พบ API Key สำหรับเชื่อมต่อ (API Key Missing)');
+      }
+
       // Initialize Gemini Client Side
-      // ใช้ Environment variable API_KEY เท่านั้น
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const params = {
@@ -230,14 +242,25 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
             temperature: 0.4,
             topK: 40,
             topP: 0.95,
+            // เพิ่ม Safety Settings เพื่อลดโอกาสที่ AI จะปฏิเสธการตอบคำถามทางการแพทย์
+            safetySettings: [
+                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' }
+            ]
         }
       };
 
       // เรียกใช้ฟังก์ชัน Retry Wrapper
       const response = await generateContentWithRetry(ai, params);
 
+      // ตรวจสอบกรณีที่ AI ปฏิเสธการตอบ (Safety Block)
       if (!response || !response.text) {
-         throw new Error('ไม่ได้รับข้อมูลการวิเคราะห์จากระบบ');
+         if (response?.candidates?.[0]?.finishReason) {
+             throw new Error(`AI ไม่สามารถตอบคำถามนี้ได้เนื่องจากนโยบายความปลอดภัย (${response.candidates[0].finishReason})`);
+         }
+         throw new Error('ไม่ได้รับข้อมูลตอบกลับจากระบบ (Empty Response)');
       }
 
       setResult(response.text);
@@ -252,14 +275,26 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
       }
 
     } catch (err: any) {
-      console.error("Gemini Error:", err);
-      let errorMessage = 'เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบวิเคราะห์ AI';
-      
-      // Handle Rate Limit / Quota issues specifically
-      if (err.message?.includes('429') || err.message?.includes('quota')) {
-          errorMessage = 'ขณะนี้ระบบมีการใช้งานหนาแน่นมาก (ผู้ใช้งานเกิน 100,000 คน) กรุณารอสักครู่แล้วลองใหม่ในภายหลัง';
-      } else if (err.message?.includes('API key')) {
-          errorMessage = 'เกิดปัญหาเรื่องกุญแจการเข้าถึง (API Key Invalid) กรุณาตรวจสอบการตั้งค่า';
+      console.error("Gemini Error Full Object:", err);
+      let errorMessage = 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
+
+      // แปลง Error Message เป็นภาษาไทยที่เข้าใจง่าย
+      if (typeof err.message === 'string') {
+          if (err.message.includes('429') || err.message.includes('quota')) {
+              errorMessage = 'ขณะนี้ระบบมีการใช้งานหนาแน่นมาก (Rate Limit Exceeded) กรุณารอสักครู่แล้วลองใหม่';
+          } else if (err.message.includes('API key')) {
+              errorMessage = 'กุญแจการเข้าถึงไม่ถูกต้อง (Invalid API Key)';
+          } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+              errorMessage = 'การเชื่อมต่ออินเทอร์เน็ตขัดข้อง (Network Error)';
+          } else if (err.message.includes('503') || err.message.includes('500')) {
+              errorMessage = 'เซิร์ฟเวอร์ AI ขัดข้องชั่วคราว (Server Error) กรุณาลองใหม่';
+          } else if (err.message.includes('SAFETY')) {
+              errorMessage = 'เนื้อหาถูกระงับเนื่องจากนโยบายความปลอดภัย';
+          } else {
+              errorMessage = `เกิดข้อผิดพลาด: ${err.message}`; // แสดง Error จริง
+          }
+      } else {
+          errorMessage = 'เกิดข้อผิดพลาดในการประมวลผล';
       }
 
       setError(errorMessage);
@@ -317,7 +352,7 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
           </div>
 
           <p className="text-slate-600 mb-5 text-sm">
-            ป้อนอาการของคุณเพื่อรับการวิเคราะห์เบื้องต้นด้วย AI (Gemini Flash)
+            ป้อนอาการของคุณเพื่อรับการวิเคราะห์เบื้องต้นด้วย AI (Gemini)
             <strong className="text-red-600 block mt-1">
               เครื่องมือนี้ไม่ใช่การวินิจฉัยทางการแพทย์
             </strong>
@@ -361,7 +396,7 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
 
           {error && (
             <div className="mt-6 text-center bg-red-50 text-red-700 p-4 rounded-lg whitespace-pre-line border border-red-100 animate-fade-in">
-              <p className="font-semibold mb-1">เกิดข้อผิดพลาด</p>
+              <p className="font-semibold mb-1">⚠️ เกิดข้อผิดพลาด</p>
               <p className="text-sm">{error}</p>
             </div>
           )}
