@@ -12,6 +12,7 @@ export const SymptomAnalyzer: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [dailyUsage, setDailyUsage] = useState(0);
+  const [totalUsage, setTotalUsage] = useState(0);
   
   // Voice Input States
   const [isListening, setIsListening] = useState(false);
@@ -25,6 +26,7 @@ export const SymptomAnalyzer: React.FC = () => {
     const today = new Date().toDateString();
     const storedDate = localStorage.getItem('shc_usage_date');
     const storedCount = parseInt(localStorage.getItem('shc_usage_count') || '0', 10);
+    const storedTotal = parseInt(localStorage.getItem('shc_total_usage') || '0', 10);
 
     if (storedDate !== today) {
       // Reset if it's a new day
@@ -34,6 +36,7 @@ export const SymptomAnalyzer: React.FC = () => {
     } else {
       setDailyUsage(storedCount);
     }
+    setTotalUsage(storedTotal);
 
     // Cleanup speech synthesis when component unmounts
     return () => {
@@ -42,6 +45,11 @@ export const SymptomAnalyzer: React.FC = () => {
       }
     };
   }, []);
+
+  const isInAppBrowser = () => {
+    const ua = navigator.userAgent || navigator.vendor || (window as any).opera;
+    return (ua.indexOf("FBAN") > -1) || (ua.indexOf("FBAV") > -1) || (ua.indexOf("Line") > -1);
+  };
 
   const toggleListening = async () => {
     if (isListening) {
@@ -55,7 +63,10 @@ export const SymptomAnalyzer: React.FC = () => {
     // Check browser support
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setError('เบราว์เซอร์ของคุณไม่รองรับการสั่งงานด้วยเสียง');
+      setError(isInAppBrowser() 
+        ? 'เบราว์เซอร์ในแอปนี้ (In-App Browser) อาจไม่รองรับการสั่งงานด้วยเสียง แนะนำให้เปิดลิงก์ผ่าน Chrome หรือ Safari'
+        : 'เบราว์เซอร์ของคุณไม่รองรับการสั่งงานด้วยเสียง'
+      );
       return;
     }
     
@@ -69,7 +80,10 @@ export const SymptomAnalyzer: React.FC = () => {
         stream.getTracks().forEach(track => track.stop());
       } catch (err) {
         console.error('Microphone permission denied:', err);
-        setError('⚠️ ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณากดที่ไอคอนรูปกุญแจ 🔒 ที่แถบ URL หรือเมนูการตั้งค่าเว็บไซต์ แล้วเลือก "อนุญาต" (Allow) การใช้ไมโครโฟน');
+        const errorMsg = isInAppBrowser()
+          ? '⚠️ ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณาตรวจสอบการตั้งค่าสิทธิ์ของแอปพลิเคชัน หรือเปิดผ่าน Browser หลัก (Chrome/Safari)'
+          : '⚠️ ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณากดที่ไอคอนรูปกุญแจ 🔒 ที่แถบ URL หรือเมนูการตั้งค่าเว็บไซต์ แล้วเลือก "อนุญาต" (Allow) การใช้ไมโครโฟน';
+        setError(errorMsg);
         return;
       }
     }
@@ -91,7 +105,10 @@ export const SymptomAnalyzer: React.FC = () => {
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error', event.error);
       if (event.error === 'not-allowed' || event.error === 'permission-denied') {
-        setError('⚠️ ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณากดที่ไอคอนรูปกุญแจ 🔒 ที่แถบ URL ด้านบน แล้วเลือก "อนุญาต" (Allow) การใช้ไมโครโฟน');
+        const errorMsg = isInAppBrowser()
+          ? '⚠️ ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณาตรวจสอบการตั้งค่าสิทธิ์ของแอปพลิเคชัน หรือเปิดผ่าน Browser หลัก'
+          : '⚠️ ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณากดที่ไอคอนรูปกุญแจ 🔒 ที่แถบ URL แล้วเลือก "อนุญาต" (Allow) การใช้ไมโครโฟน';
+        setError(errorMsg);
       } else if (event.error === 'no-speech') {
          setError('ไม่ได้ยินเสียงพูด กรุณาลองใหม่อีกครั้งใกล้ๆ ไมโครโฟน');
       } else {
@@ -190,6 +207,10 @@ export const SymptomAnalyzer: React.FC = () => {
       setDailyUsage(newCount);
       localStorage.setItem('shc_usage_count', newCount.toString());
 
+      const newTotal = totalUsage + 1;
+      setTotalUsage(newTotal);
+      localStorage.setItem('shc_total_usage', newTotal.toString());
+
     } catch (err) {
       console.error(err);
       const errorMessage = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการวิเคราะห์ โปรดลองอีกครั้ง';
@@ -226,7 +247,7 @@ export const SymptomAnalyzer: React.FC = () => {
                 </div>
             </div>
             <div className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-md">
-                โควต้าวันนี้: {dailyUsage}/{MAX_DAILY_LIMIT}
+                โควต้าวันนี้: {dailyUsage}/{MAX_DAILY_LIMIT} <span className="hidden sm:inline">(รวม {totalUsage} ครั้ง)</span>
             </div>
           </div>
           <p className="text-slate-600 mb-5 text-sm">
