@@ -55,7 +55,7 @@ export const NearbyHospitals: React.FC = () => {
             setError('ข้อมูลตำแหน่งไม่พร้อมใช้งาน');
             break;
           case err.TIMEOUT:
-            setError('หมดเวลาในการค้นหาตำแหน่ง');
+            setError('หมดเวลาในการค้นหาตำแหน่ง (กรุณาลองใหม่ในที่โล่ง)');
             break;
           default:
             setError('เกิดข้อผิดพลาดในการระบุตำแหน่ง');
@@ -63,7 +63,11 @@ export const NearbyHospitals: React.FC = () => {
         }
         setIsLoading(false);
       },
-      { timeout: 10000 }
+      { 
+        enableHighAccuracy: true, // Try to get best possible location
+        timeout: 30000,           // Increase timeout to 30 seconds
+        maximumAge: 0 
+      }
     );
   };
 
