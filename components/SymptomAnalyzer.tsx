@@ -75,7 +75,13 @@ export const SymptomAnalyzer: React.FC = () => {
 
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error', event.error);
-      setError('เกิดข้อผิดพลาดในการรับเสียง: ' + event.error);
+      if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+        setError('⚠️ ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณากดที่ไอคอนรูปกุญแจ 🔒 ที่แถบ URL ด้านบน แล้วเลือก "อนุญาต" (Allow) การใช้ไมโครโฟน');
+      } else if (event.error === 'no-speech') {
+         setError('ไม่ได้ยินเสียงพูด กรุณาลองใหม่อีกครั้งใกล้ๆ ไมโครโฟน');
+      } else {
+        setError('เกิดข้อผิดพลาดในการรับเสียง: ' + event.error);
+      }
       setIsListening(false);
     };
 
@@ -256,7 +262,7 @@ export const SymptomAnalyzer: React.FC = () => {
           </div>
 
           {error && (
-            <div className="mt-6 text-center bg-red-50 text-red-700 p-4 rounded-lg">
+            <div className="mt-6 text-center bg-red-50 text-red-700 p-4 rounded-lg whitespace-pre-line">
               <p>{error}</p>
             </div>
           )}
