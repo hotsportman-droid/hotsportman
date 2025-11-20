@@ -78,7 +78,7 @@ export const XIcon: React.FC<{ className?: string }> = ({ className }) => (
     <IconWrapper className={className}>
         <path d="M6 18L18 6M6 6l12 12"></path>
     </IconWrapper>
-);
+  );
 
 export const NhsoIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg 
@@ -170,5 +170,17 @@ export const ExclamationIcon: React.FC<{ className?: string }> = ({ className })
 export const CheckCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
   <IconWrapper className={className}>
     <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+  </IconWrapper>
+);
+
+export const MicIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <IconWrapper className={className}>
+    <path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+  </IconWrapper>
+);
+
+export const StopIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <IconWrapper className={className}>
+    <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
   </IconWrapper>
 );
