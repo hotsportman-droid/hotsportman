@@ -282,8 +282,8 @@ export const DrRakAvatar: React.FC = () => {
             const transcript = event.results[0][0].transcript;
             console.log('Heard (Symptoms):', transcript);
             setInputText(transcript);
-            // Auto trigger analysis after getting text
-            setTimeout(() => handleAnalyze(transcript), 500);
+            // Auto trigger analysis after getting text with a noticeable delay
+            setTimeout(() => handleAnalyze(transcript), 1500);
         };
         
         recognition.onend = () => {
@@ -316,6 +316,9 @@ export const DrRakAvatar: React.FC = () => {
     const handleGreeting = async () => {
         setInteractionState('processing_greeting');
         setError(null);
+
+        // Add artificial delay for UX (minimum 1.5s)
+        const delayPromise = new Promise(resolve => setTimeout(resolve, 1500));
 
         if (!process.env.API_KEY) {
             setError("ไม่พบ API Key! กรุณาตั้งค่า Environment Variable ชื่อ 'API_KEY' ใน Vercel หรือไฟล์ .env");
@@ -368,13 +371,16 @@ export const DrRakAvatar: React.FC = () => {
                 Keep it natural, caring, and short (under 3 sentences).
             `;
 
-            const response = await ai.models.generateContent({
+            const apiPromise = ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
                 config: {
                     tools: [{ googleSearch: {} }] 
                 }
             });
+
+            // Wait for both API and minimum delay
+            const [_, response] = await Promise.all([delayPromise, apiPromise]);
             
             const text = response.text;
             
@@ -405,11 +411,14 @@ export const DrRakAvatar: React.FC = () => {
         setInteractionState('processing_analysis');
         setAnalysis(null);
         setError(null);
+
+        // Artificial delay to make it feel like "thinking" and prevent flash errors
+        const delayPromise = new Promise(resolve => setTimeout(resolve, 2000));
         
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             
-            const response = await ai.models.generateContent({
+            const apiPromise = ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: text,
                 config: {
@@ -429,7 +438,7 @@ export const DrRakAvatar: React.FC = () => {
                         },
                         required: ["speech", "symptoms", "advice", "precautions"]
                     },
-                    // Add safety settings to allow medical context which might be flagged as 'Dangerous Content'
+                    // Relax safety settings for medical context
                     safetySettings: [
                         { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
                         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
@@ -439,16 +448,27 @@ export const DrRakAvatar: React.FC = () => {
                 }
             });
 
-            // Clean markdown code blocks if present (Gemini sometimes adds ```json ... ```)
+            // Wait for both
+            const [_, response] = await Promise.all([delayPromise, apiPromise]);
+
+            // Improved cleaning logic: Extract strictly between the first { and last }
             let resultText = response.text || "{}";
-            resultText = resultText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+            const firstBrace = resultText.indexOf('{');
+            const lastBrace = resultText.lastIndexOf('}');
+            
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                resultText = resultText.substring(firstBrace, lastBrace + 1);
+            } else {
+                // Fallback if no braces found (unlikely with valid JSON response)
+                resultText = resultText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+            }
 
             let result;
             try {
                 result = JSON.parse(resultText);
             } catch (e) {
                 console.error("JSON Parse Error", e, resultText);
-                throw new Error("Invalid JSON response from AI");
+                throw new Error("รูปแบบข้อมูลจาก AI ไม่ถูกต้อง (Invalid JSON)");
             }
 
             const symptoms = result.symptoms || "-";
@@ -464,7 +484,6 @@ export const DrRakAvatar: React.FC = () => {
             });
 
             // Construct full speech for reading out loud
-            // We strip markdown bullets for smoother speech
             const fullReadOut = `
                 ${speechText}
                 สำหรับอาการที่คุณเล่ามา. ${symptoms.replace(/[-*•]/g, '')}.
@@ -478,9 +497,17 @@ export const DrRakAvatar: React.FC = () => {
         } catch (err: any) {
             console.error("AI Error:", err);
             let errorMessage = "เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งค่ะ";
+            
             if (err.message && err.message.includes('API Key')) {
-                errorMessage = "ไม่พบ API Key หรือ API Key ไม่ถูกต้อง (กรุณาตรวจสอบการตั้งค่าใน Vercel/Env)";
+                errorMessage = "ไม่พบ API Key หรือการตั้งค่าผิดพลาด (400 Bad Request)";
+            } else if (err.message && (err.message.includes('429') || err.message.includes('Quota'))) {
+                errorMessage = "ระบบกำลังทำงานหนักเกินไป กรุณารอสักครู่แล้วลองใหม่ (Quota Exceeded)";
+            } else if (err.message && err.message.includes('SAFETY')) {
+                errorMessage = "เนื้อหาคำถามอาจไม่เหมาะสมหรือขัดต่อนโยบายความปลอดภัยของ AI";
+            } else if (err.message && (err.message.includes('fetch') || err.message.includes('network'))) {
+                errorMessage = "การเชื่อมต่ออินเทอร์เน็ตขัดข้อง กรุณาตรวจสอบสัญญาณเน็ต";
             }
+
             setError(errorMessage);
             setInteractionState('idle');
         }
