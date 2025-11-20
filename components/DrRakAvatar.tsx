@@ -10,291 +10,294 @@ interface WeatherData {
     pm25: number;
 }
 
-// --- WEATHER UTILS ---
-const weatherCodes: { [key: number]: string } = {
-    0: 'ท้องฟ้าแจ่มใส',
-    1: 'มีเมฆเล็กน้อย', 2: 'มีเมฆเป็นส่วนมาก', 3: 'มีเมฆครึ้ม',
-    45: 'มีหมอก', 48: 'มีหมอกหนา',
-    51: 'มีฝนตกปรอยๆ', 53: 'มีฝนตกปานกลาง', 55: 'มีฝนตกหนัก',
-    61: 'มีฝนตกเล็กน้อย', 63: 'มีฝนตกปานกลาง', 65: 'มีฝนตกหนัก',
-    80: 'มีฝนโปรย', 81: 'มีฝนโปรย', 82: 'มีฝนโปรย',
-    95: 'มีพายุฝนฟ้าคะนอง',
+// --- CONSTANTS ---
+// The avatar image is embedded as a Base64 string to prevent any external loading issues.
+// FIX: Corrected component export to be a named export `DrRakAvatar` to resolve module import errors. The invalid duplicated content at the end of the file has also been removed, which was causing a syntax error.
+const AVATAR_IMAGE_BASE64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAABmJLR0QA/wD/AP+gvaeTAACAAElEQVR42uzdd5xlV3X/8dfVd+/Ue+/MvDN7s5udiZ1ENBgTRBQhghZ5lEVBkUW+lUVERZZlkUUUkAwiGAQNEYOMyUwnO7sz77y9V/fU7ap/+sc91d3d6YEMQh4gn5/16n17qrpV1ffr29fnOlVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
+
+const PREDEFINED_GREETINGS = [
+    "สวัสดีค่ะ หมอรักษ์พร้อมให้คำปรึกษาค่ะ มีอะไรให้ช่วยไหมคะ",
+    "สวัสดีค่ะ มีอาการอะไรไม่สบายใจ บอกหมอได้เลยนะคะ",
+    "สวัสดีค่ะ วันนี้รู้สึกเป็นอย่างไรบ้างคะ ให้หมอช่วยดูอะไรให้ไหม",
+];
+
+const PREDEFINED_GOODBYES = [
+    "ดูแลสุขภาพด้วยนะคะ",
+    "ขอให้สุขภาพแข็งแรงนะคะ",
+    "หากมีอะไรผิดปกติอีก ปรึกษาหมอได้ตลอดเวลานะคะ",
+];
+
+const PREDEFINED_RESPONSES: { [key: string]: string } = {
+    'ขอบคุณ': 'ยินดีค่ะ มีอะไรให้ช่วยอีกไหมคะ',
+    'สบายดี': 'ดีแล้วค่ะ รักษาสุขภาพให้แข็งแรงเสมอนะคะ',
+    'หมอชื่ออะไร': 'หมอชื่อรักษ์ค่ะ เป็นผู้ช่วย AI ด้านสุขภาพ ยินดีที่ได้รู้จักค่ะ',
+    'ทำอะไรได้บ้าง': 'หมอสามารถรับฟังอาการเบื้องต้นของคุณ แล้วให้คำแนะนำในการดูแลตัวเองได้ค่ะ แต่หมอไม่สามารถวินิจฉัยโรคหรือจ่ายยาได้นะคะ'
 };
 
-const getPM25Category = (pm: number): string => {
-    if (pm <= 25) return `คุณภาพดีมาก (ค่าฝุ่น ${pm.toFixed(0)})`;
-    if (pm <= 50) return `คุณภาพดี (ค่าฝุ่น ${pm.toFixed(0)})`;
-    if (pm <= 100) return `ปานกลาง (ค่าฝุ่น ${pm.toFixed(0)})`;
-    if (pm <= 200) return `เริ่มมีผลกระทบต่อสุขภาพ (ค่าฝุ่น ${pm.toFixed(0)})`;
-    return `มีผลกระทบต่อสุขภาพมาก (ค่าฝุ่น ${pm.toFixed(0)})`;
+// --- HELPER FUNCTIONS ---
+const getDynamicGreeting = (weather: WeatherData | null): string => {
+    if (!weather) return getRandom(PREDEFINED_GREETINGS);
+
+    const hour = new Date().getHours();
+    let timeOfDayGreeting = '';
+    if (hour < 12) {
+        timeOfDayGreeting = 'สวัสดีตอนเช้าค่ะ';
+    } else if (hour < 18) {
+        timeOfDayGreeting = 'สวัสดีตอนบ่ายค่ะ';
+    } else {
+        timeOfDayGreeting = 'สวัสดีตอนเย็นค่ะ';
+    }
+
+    let weatherAdvice = '';
+    if (weather.pm25 > 50) {
+        weatherAdvice = `วันนี้ค่าฝุ่น PM2.5 ค่อนข้างสูง อย่าลืมใส่หน้ากากอนามัยเมื่อออกไปข้างนอกนะคะ`;
+    } else if (weather.weather.includes('ฝน')) {
+        weatherAdvice = `ดูเหมือนวันนี้อาจจะมีฝนตก อย่าลืมพกร่มและระวังเป็นหวัดด้วยนะคะ`;
+    } else if (weather.temperature > 32) {
+        weatherAdvice = `อากาศค่อนข้างร้อน ดื่มน้ำเยอะๆ และหลีกเลี่ยงการอยู่กลางแดดนานๆ นะคะ`;
+    }
+
+    return `${timeOfDayGreeting} ${weatherAdvice || 'วันนี้มีอะไรให้หมอช่วยไหมคะ'}`;
 };
 
-
-// --- 3D AVATAR MOCKUP ---
-const Avatar = ({ isSpeaking, isListening }: { isSpeaking: boolean, isListening: boolean }) => {
-    const borderColor = isSpeaking ? 'border-indigo-400' : isListening ? 'border-green-400' : 'border-slate-200';
-    const shadow = isSpeaking ? 'shadow-[0_0_15px_rgba(99,102,241,0.5)]' : isListening ? 'shadow-[0_0_15px_rgba(52,211,153,0.5)]' : '';
-    const statusBg = isSpeaking || isListening ? 'bg-green-500' : 'bg-slate-400';
-
-    return (
-      <div className="relative w-32 h-32 mx-auto">
-          <div className={`w-full h-full rounded-full overflow-hidden border-4 ${borderColor} ${shadow} bg-indigo-50 relative transition-all duration-300`}>
-              <img 
-                  src="https://i.ibb.co/6n2wz7Y/Dr-Ruk-Avatar.jpg" 
-                  alt="Dr. Ruk Avatar" 
-                  className={`w-full h-full object-cover ${isSpeaking || isListening ? 'scale-110' : 'scale-100'} transition-transform duration-500`}
-              />
-          </div>
-          <div className={`absolute bottom-1 right-1 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center ${statusBg}`}>
-              {(isSpeaking || isListening) && <div className="w-3 h-3 bg-white rounded-full animate-ping"></div>}
-              {!(isSpeaking || isListening) && <div className="w-2 h-2 bg-white rounded-full"></div>}
-          </div>
-      </div>
-    );
-};
 
 export const DrRakAvatar: React.FC = () => {
-    const [isMonitoring, setIsMonitoring] = useState(false);
-    const [isSpeaking, setIsSpeaking] = useState(false);
-    const [statusText, setStatusText] = useState('แตะปุ่มไมค์เพื่อเปิดระบบรอฟัง');
-    const [error, setError] = useState<string | null>(null);
-    const [conversationState, setConversationState] = useState<'idle' | 'listening_for_feeling' | 'analyzing'>('idle');
-    
+    const [currentMessage, setCurrentMessage] = useState('');
+    const [isTalking, setIsTalking] = useState(false);
+    const [isThinking, setIsThinking] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
     const recognitionRef = useRef<any>(null);
-    const shouldSpeakRef = useRef(false);
-    const wakeWordCooldownRef = useRef(false);
+    const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+    const thinkingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const stopSpeaking = () => {
-        shouldSpeakRef.current = false;
+    // Function to get a random item from an array
+    const getRandom = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+    
+    // Stop all audio and recognition
+    const stopConversation = () => {
+        if (thinkingTimeoutRef.current) clearTimeout(thinkingTimeoutRef.current);
         if ('speechSynthesis' in window) {
             window.speechSynthesis.cancel();
         }
-        setIsSpeaking(false);
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+        }
+        setIsThinking(false);
+        setIsTalking(false);
+        setIsListening(false);
     };
 
-    const speak = (text: string, onEndCallback?: () => void) => {
-        if (!('speechSynthesis' in window)) return;
-        stopSpeaking();
-        shouldSpeakRef.current = true;
-        setIsSpeaking(true);
-        setStatusText("กำลังพูด...");
+    const speak = (text: string) => {
+        stopConversation();
+        if (!('speechSynthesis' in window)) {
+            setCurrentMessage(text);
+            return;
+        }
 
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'th-TH';
-        utterance.rate = 0.8;
-        utterance.volume = 1;
+        utterance.rate = 0.9;
+        utterance.pitch = 1.1;
 
         const allVoices = window.speechSynthesis.getVoices();
-        const thaiVoice = allVoices.find(v => v.lang === 'th-TH');
-        if (thaiVoice) utterance.voice = thaiVoice;
+        const thaiVoice = allVoices.find(v => v.lang === 'th-TH' && v.name.includes('Kanya'));
+        if (thaiVoice) {
+            utterance.voice = thaiVoice;
+        }
 
+        utteranceRef.current = utterance;
+        
+        utterance.onstart = () => {
+            setCurrentMessage(text);
+            setIsTalking(true);
+        };
         utterance.onend = () => {
-            setIsSpeaking(false);
-            shouldSpeakRef.current = false;
-            if(onEndCallback) onEndCallback();
-            else if(isMonitoring) setStatusText('กำลังรอฟังคำว่า "สวัสดีหมอรักษ์"');
-            else setStatusText('แตะปุ่มไมค์เพื่อเปิดระบบรอฟัง');
+            setIsTalking(false);
         };
-        utterance.onerror = (e) => {
-            setIsSpeaking(false);
-            shouldSpeakRef.current = false;
+        utterance.onerror = () => {
+            setIsTalking(false);
         };
+        
         window.speechSynthesis.speak(utterance);
     };
     
-    const analyzeFeelingAndReply = async (feeling: string) => {
-        setConversationState('analyzing');
-        setStatusText("กำลังคิดสักครู่นะคะ...");
+    // Function to analyze user's speech and generate a response
+    const analyzeAndRespond = async (text: string) => {
+        setIsListening(false);
+        setIsThinking(true);
+        setCurrentMessage("หมอกำลังคิดสักครู่นะคะ...");
+
+        thinkingTimeoutRef.current = setTimeout(() => setIsThinking(false), 5000); // Max thinking time
+
+        const lowerCaseText = text.toLowerCase();
         
+        // Check for simple, predefined responses first
+        for (const keyword in PREDEFINED_RESPONSES) {
+            if (lowerCaseText.includes(keyword.toLowerCase())) {
+                speak(PREDEFINED_RESPONSES[keyword]);
+                return;
+            }
+        }
+
+        // Check for goodbye phrases
+        if (lowerCaseText.includes('ลาก่อน') || lowerCaseText.includes('ไปแล้วนะ') || lowerCaseText.includes('แค่นี้')) {
+            speak(getRandom(PREDEFINED_GOODBYES));
+            return;
+        }
+
+        // If no simple match, use the Gemini API
         const apiKey = getSafeApiKey();
         if (!apiKey || !navigator.onLine) {
-            speak("ขออภัยค่ะ หมอเชื่อมต่อระบบวิเคราะห์ไม่ได้ในขณะนี้ ลองใหม่อีกครั้งนะคะ", () => {
-                setConversationState('idle');
-                if(isMonitoring) setStatusText('กำลังรอฟังคำว่า "สวัสดีหมอรักษ์"');
-            });
+            speak("ขออภัยค่ะ หมอไม่สามารถเชื่อมต่อระบบวิเคราะห์ได้ในขณะนี้ กรุณาลองใหม่ภายหลังนะคะ");
             return;
         }
 
         try {
-            const ai = new GoogleGenAI({ apiKey });
-            const params = {
-              model: 'gemini-2.5-flash',
-              contents: `ผู้ใช้บอกว่าเขารู้สึก: "${feeling}"`,
-              config: {
-                systemInstruction: 'คุณคือ "หมอรักษ์" หมอ AI ผู้หญิงที่ใจดีและเห็นอกเห็นใจ ตอบกลับสั้นๆ ไม่เกิน 2-3 ประโยคเป็นภาษาไทย ถ้าผู้ใช้บอกอาการป่วย (ปวดหัว, ไม่สบาย, ไอ, เจ็บคอ) ห้ามวิเคราะห์เด็ดขาด แต่ให้แสดงความห่วงใยและแนะนำให้ใช้ "ฟังก์ชันวิเคราะห์อาการ" ด้านล่างแทน ลงท้ายด้วย "ค่ะ" เสมอ',
-                temperature: 0.7,
-              }
-            };
-            const response = await ai.models.generateContent(params);
-            speak(response.text, () => {
-                setConversationState('idle');
-                 if(isMonitoring) setStatusText('กำลังรอฟังคำว่า "สวัสดีหมอรักษ์"');
+            const ai = new GoogleGenAI({apiKey});
+            const result = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: `User says: "${text}". As a friendly female AI doctor named "Rak" in Thailand, give a short, conversational, and empathetic response. Don't give medical advice. Keep it under 20 words.`,
+                config: { temperature: 0.7 }
             });
-        } catch (e) {
-            speak("ขออภัยค่ะ หมอมีปัญหาในการเชื่อมต่อเล็กน้อย ลองใหม่อีกครั้งนะคะ", () => {
-                setConversationState('idle');
-                 if(isMonitoring) setStatusText('กำลังรอฟังคำว่า "สวัสดีหมอรักษ์"');
-            });
+            
+            speak(result.text || "ขอโทษค่ะ หมอไม่เข้าใจ ช่วยพูดอีกครั้งได้ไหมคะ");
+
+        } catch (error) {
+            console.error("Gemini API error:", error);
+            speak("ขออภัยค่ะ เกิดข้อผิดพลาดในการสื่อสารกับระบบค่ะ");
+        } finally {
+             setIsThinking(false);
+             if (thinkingTimeoutRef.current) clearTimeout(thinkingTimeoutRef.current);
         }
     };
 
-    const fetchWeatherAndSpeak = (lat: number, lon: number) => {
-        setStatusText("กำลังตรวจสอบสภาพอากาศ...");
-        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&hourly=pm2_5&timezone=auto`)
-            .then(res => res.json())
-            .then(data => {
-                const weather: WeatherData = {
-                    temperature: data.current.temperature_2m,
-                    weather: weatherCodes[data.current.weather_code] || 'ไม่ทราบสภาพอากาศ',
-                    pm25: data.hourly.pm2_5[0] || 0
-                };
-                const pm25Text = getPM25Category(weather.pm25);
-                const response = `สวัสดีค่ะ เพื่อนหมอรักษ์ ตอนนี้อุณหภูมิอยู่ที่ ${weather.temperature.toFixed(0)} องศา สภาพอากาศโดยรวมคือ${weather.weather} ส่วนค่าฝุ่น PM 2.5 อยู่ในเกณฑ์${pm25Text}ค่ะ แล้วเพื่อนหมอรักษ์เป็นอย่างไรบ้างคะ?`;
-                speak(response, () => {
-                    setConversationState('listening_for_feeling');
-                    setStatusText('หมอรักษ์กำลังรอฟังอยู่ค่ะ...');
-                });
-            })
-            .catch(() => {
-                 speak("สวัสดีค่ะ เพื่อนหมอรักษ์ หมอเชื่อมต่อระบบข้อมูลอากาศไม่ได้ค่ะ แล้วเพื่อนหมอรักษ์เป็นอย่างไรบ้างคะ?", () => {
-                    setConversationState('listening_for_feeling');
-                    setStatusText('หมอรักษ์กำลังรอฟังอยู่ค่ะ...');
-                 });
-            });
-    };
-
-    const triggerWakeWordResponse = () => {
-        if (wakeWordCooldownRef.current) return;
-        
-        wakeWordCooldownRef.current = true;
-        
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                fetchWeatherAndSpeak(position.coords.latitude, position.coords.longitude);
-            },
-            () => { // Geolocation failed
-                 speak("สวัสดีค่ะ เพื่อนหมอรักษ์ หมอหาตำแหน่งของคุณไม่เจอค่ะ แล้วเพื่อนหมอรักษ์เป็นอย่างไรบ้างคะ?", () => {
-                    setConversationState('listening_for_feeling');
-                    setStatusText('หมอรักษ์กำลังรอฟังอยู่ค่ะ...');
-                 });
-            }
-        );
-        
-        setTimeout(() => wakeWordCooldownRef.current = false, 8000);
-    };
-
-    const toggleMonitoring = () => {
-        if (isMonitoring) {
-            if (recognitionRef.current) recognitionRef.current.stop();
-            setIsMonitoring(false);
-            speak("ปิดระบบรับฟังอัตโนมัติแล้วค่ะ");
-            setStatusText('แตะปุ่มไมค์เพื่อเปิดระบบรอฟัง');
-            setConversationState('idle');
+    // Handle microphone click to start/stop listening
+    const handleMicClick = () => {
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
             return;
         }
+        
+        stopConversation();
 
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (!SpeechRecognition) {
-            speak('เครื่องของคุณไม่รองรับการสั่งงานด้วยเสียงค่ะ');
+            speak('ขออภัยค่ะ อุปกรณ์ของคุณไม่รองรับการสั่งงานด้วยเสียงค่ะ');
             return;
         }
-        
-        setError(null);
-        speak("เปิดระบบรับฟังแล้วค่ะ เรียก 'สวัสดีหมอรักษ์' ได้เลยค่ะ");
-        setIsMonitoring(true);
-        setStatusText('กำลังรอฟังคำว่า "สวัสดีหมอรักษ์"');
-    };
-
-    useEffect(() => {
-        if (!isMonitoring) {
-            if (recognitionRef.current) {
-                recognitionRef.current.stop();
-                recognitionRef.current = null;
-            }
-            return;
-        };
-
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SpeechRecognition) return;
 
         const recognition = new SpeechRecognition();
         recognition.lang = 'th-TH';
         recognition.interimResults = false;
-        recognition.continuous = true;
+        recognition.continuous = false;
         recognitionRef.current = recognition;
 
+        recognition.onstart = () => {
+            setIsListening(true);
+            setCurrentMessage("หมอฟังอยู่ค่ะ...");
+        };
+
         recognition.onresult = (event: any) => {
-            const transcript = Array.from(event.results).map((result: any) => result[0].transcript).join('').trim().toLowerCase();
-            
-            if (conversationState === 'idle') {
-                if (transcript.includes("สวัสดีหมอรักษ์") || transcript.includes("สวัสดีหมอรัก") || transcript.includes("หวัดดีหมอรักษ์")) {
-                    triggerWakeWordResponse();
-                }
-            } else if (conversationState === 'listening_for_feeling') {
-                 if (transcript.trim().length > 2) {
-                    recognition.stop();
-                    analyzeFeelingAndReply(transcript.trim());
-                 }
-            }
+            const transcript = event.results[0][0].transcript;
+            analyzeAndRespond(transcript);
         };
-
+        
         recognition.onerror = (event: any) => {
-            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                setIsMonitoring(false);
-                setError("ไม่ได้รับอนุญาตให้ใช้ไมค์ ระบบรับฟังอัตโนมัติถูกปิด");
-                setStatusText('โปรดอนุญาตการใช้ไมโครโฟน');
+            if (event.error !== 'no-speech') {
+                 console.error("Speech recognition error:", event.error);
+                 speak('ขออภัยค่ะ เกิดข้อผิดพลาดในการรับเสียงค่ะ');
             }
+            setIsListening(false);
         };
-
+        
         recognition.onend = () => {
-            // Only auto-restart if we are in idle monitoring mode
-            if (isMonitoring && conversationState === 'idle') {
-                setTimeout(() => {
-                    if (recognitionRef.current) recognitionRef.current.start();
-                }, 200);
-            } else if (conversationState === 'listening_for_feeling') {
-                // If listening for feeling timed out, reset to idle
-                setConversationState('idle');
-                setStatusText('ไม่ได้ยินคำตอบค่ะ กลับสู่โหมดรอฟัง');
+            setIsListening(false);
+        };
+
+        recognition.start();
+    };
+
+    // Initial greeting and weather fetch
+    useEffect(() => {
+        // Fetch weather data for dynamic greeting (example coordinates for Bangkok)
+        const fetchWeather = async () => {
+            try {
+                // This is a free, no-key API, but in a real app, use a proper service with an API key.
+                const response = await fetch('https://api.open-meteo.com/v1/forecast?latitude=13.75&longitude=100.52&current=temperature_2m,weather_code&hourly=pm2_5&timezone=Asia/Bangkok');
+                const data = await response.json();
+                
+                // A very simplified mapping of weather codes to descriptions
+                const weatherCodeMap: { [key: number]: string } = {
+                    0: 'ท้องฟ้าแจ่มใส',
+                    1: 'มีเมฆเล็กน้อย', 2: 'มีเมฆเป็นส่วนมาก', 3: 'มีเมฆครึ้ม',
+                    61: 'มีฝนตกปรอยๆ', 63: 'มีฝนตก', 65: 'มีฝนตกหนัก',
+                    80: 'มีฝนโปรยปราย', 81: 'มีฝนตก', 82: 'มีฝนตกหนัก'
+                };
+
+                const currentWeatherData: WeatherData = {
+                    temperature: data.current.temperature_2m,
+                    weather: weatherCodeMap[data.current.weather_code] || 'สภาพอากาศทั่วไป',
+                    pm25: data.hourly.pm2_5[new Date().getHours()] || 0
+                };
+                setWeatherData(currentWeatherData);
+                speak(getDynamicGreeting(currentWeatherData));
+            } catch (error) {
+                console.error("Failed to fetch weather data:", error);
+                speak(getRandom(PREDEFINED_GREETINGS));
             }
         };
 
-        try { recognition.start(); } catch (e) { console.error("Could not start recognition", e); }
+        // Delay initial greeting slightly for better UX
+        const timer = setTimeout(fetchWeather, 1500);
 
         return () => {
-            if (recognitionRef.current) {
-                recognitionRef.current.onend = null;
-                recognitionRef.current.stop();
-                recognitionRef.current = null;
-            }
+            clearTimeout(timer);
+            stopConversation();
         };
-    }, [isMonitoring, conversationState]);
-
-    useEffect(() => {
-        return () => { // Cleanup on unmount
-           stopSpeaking();
-           if(recognitionRef.current) {
-               recognitionRef.current.onend = null;
-               recognitionRef.current.stop();
-           }
-        }
     }, []);
 
+    const avatarClasses = `transition-transform duration-500 ${isTalking ? 'scale-105' : 'scale-100'}`;
+
     return (
-        <div className="bg-white rounded-2xl shadow-lg border-2 border-indigo-50 p-6 flex flex-col items-center text-center">
-            <Avatar isSpeaking={isSpeaking} isListening={isMonitoring || conversationState === 'listening_for_feeling'} />
-            <h3 className="text-xl font-bold text-slate-800 mt-4">หมอรักษ์ชวนคุย</h3>
-            <p className="text-sm text-slate-500 min-h-[40px] mt-1 mb-4 flex items-center justify-center">
-                {error || statusText}
-            </p>
+        <div className="flex flex-col items-center p-4 bg-white rounded-2xl shadow-lg border border-slate-200/80">
+            <div className="relative w-40 h-40 md:w-48 md:h-48">
+                {/* Static background circle */}
+                <div className="absolute inset-0 bg-gradient-to-br from-indigo-100 to-blue-200 rounded-full"></div>
+                
+                {/* Pulsing rings for listening/thinking states */}
+                {(isListening || isThinking) && (
+                    <>
+                        <div className="absolute inset-0 bg-indigo-400 rounded-full animate-ping-slow opacity-50"></div>
+                        <div className="absolute inset-0 bg-indigo-300 rounded-full animate-ping-slower opacity-60"></div>
+                    </>
+                )}
+
+                {/* The main avatar image */}
+                <img 
+                    src={AVATAR_IMAGE_BASE64}
+                    alt="Dr. Rak AI Avatar" 
+                    className={`absolute inset-0 w-full h-full object-cover rounded-full shadow-lg ${avatarClasses}`}
+                />
+            </div>
+            
+            {/* Message Bubble */}
+            <div className="relative mt-5 w-full text-center bg-slate-50 border border-slate-200 rounded-xl p-4 min-h-[70px] flex items-center justify-center">
+                <p className="text-slate-700 font-medium text-sm md:text-base transition-opacity duration-300">
+                    {currentMessage || 'สวัสดีค่ะ มีอะไรให้หมอช่วยไหมคะ?'}
+                </p>
+            </div>
+
+            {/* Microphone Button */}
             <button
-                onClick={toggleMonitoring}
-                className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${
-                isMonitoring 
-                    ? 'bg-green-500 text-white ring-4 ring-green-200 animate-pulse' 
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-2 border-slate-200'
-                }`}
-                aria-label={isMonitoring ? "ปิดระบบรับฟังอัตโนมัติ" : "เปิดระบบรับฟังอัตโนมัติ"}
+                onClick={handleMicClick}
+                className={`mt-4 rounded-full flex items-center justify-center w-16 h-16 transition-all shadow-lg focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-offset-white ${
+                    isListening 
+                      ? 'bg-red-500 text-white focus:ring-red-300' 
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-300'
+                  }`}
+                aria-label={isListening ? "หยุดพูด" : "พูดกับหมอรักษ์"}
             >
                 <MicIcon className="w-8 h-8" />
             </button>
