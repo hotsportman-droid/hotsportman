@@ -283,7 +283,7 @@ export const DrRakAvatar: React.FC = () => {
             console.log('Heard (Symptoms):', transcript);
             setInputText(transcript);
             // Auto trigger analysis after getting text with a noticeable delay
-            setTimeout(() => handleAnalyze(transcript), 1500);
+            setTimeout(() => handleAnalyze(transcript), 2000);
         };
         
         recognition.onend = () => {
@@ -317,8 +317,8 @@ export const DrRakAvatar: React.FC = () => {
         setInteractionState('processing_greeting');
         setError(null);
 
-        // Add artificial delay for UX (minimum 1.5s)
-        const delayPromise = new Promise(resolve => setTimeout(resolve, 1500));
+        // Add artificial delay for UX (2 seconds)
+        const delayPromise = new Promise(resolve => setTimeout(resolve, 2000));
 
         if (!process.env.API_KEY) {
             setError("ไม่พบ API Key! กรุณาตั้งค่า Environment Variable ชื่อ 'API_KEY' ใน Vercel หรือไฟล์ .env");
@@ -412,8 +412,8 @@ export const DrRakAvatar: React.FC = () => {
         setAnalysis(null);
         setError(null);
 
-        // Artificial delay to make it feel like "thinking" and prevent flash errors
-        const delayPromise = new Promise(resolve => setTimeout(resolve, 2000));
+        // Artificial delay to make it feel like "thinking" and prevent flash errors (2.5 seconds)
+        const delayPromise = new Promise(resolve => setTimeout(resolve, 2500));
         
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -451,16 +451,18 @@ export const DrRakAvatar: React.FC = () => {
             // Wait for both
             const [_, response] = await Promise.all([delayPromise, apiPromise]);
 
-            // Improved cleaning logic: Extract strictly between the first { and last }
+            // Robust JSON Cleaning Logic
             let resultText = response.text || "{}";
+            
+            // 1. Remove markdown code blocks
+            resultText = resultText.replace(/```json/g, '').replace(/```/g, '');
+            
+            // 2. Find the first '{' and last '}' to extract the valid JSON object
             const firstBrace = resultText.indexOf('{');
             const lastBrace = resultText.lastIndexOf('}');
             
             if (firstBrace !== -1 && lastBrace !== -1) {
                 resultText = resultText.substring(firstBrace, lastBrace + 1);
-            } else {
-                // Fallback if no braces found (unlikely with valid JSON response)
-                resultText = resultText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
             }
 
             let result;
@@ -468,7 +470,7 @@ export const DrRakAvatar: React.FC = () => {
                 result = JSON.parse(resultText);
             } catch (e) {
                 console.error("JSON Parse Error", e, resultText);
-                throw new Error("รูปแบบข้อมูลจาก AI ไม่ถูกต้อง (Invalid JSON)");
+                throw new Error("ข้อมูลจาก AI ไม่สมบูรณ์ (Invalid JSON)");
             }
 
             const symptoms = result.symptoms || "-";
@@ -506,6 +508,8 @@ export const DrRakAvatar: React.FC = () => {
                 errorMessage = "เนื้อหาคำถามอาจไม่เหมาะสมหรือขัดต่อนโยบายความปลอดภัยของ AI";
             } else if (err.message && (err.message.includes('fetch') || err.message.includes('network'))) {
                 errorMessage = "การเชื่อมต่ออินเทอร์เน็ตขัดข้อง กรุณาตรวจสอบสัญญาณเน็ต";
+            } else if (err.message && err.message.includes('JSON')) {
+                 errorMessage = "เกิดข้อผิดพลาดในการอ่านข้อมูลจาก AI กรุณาลองใหม่อีกครั้ง";
             }
 
             setError(errorMessage);
