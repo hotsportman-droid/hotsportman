@@ -19,17 +19,13 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    const client = new GoogleGenAI({ apiKey: apiKey });
+    // Initialize strictly according to guidelines
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     
-    // Use standard generateContent
-    const response = await client.models.generateContent({
+    // Use ai.models.generateContent with the correct model name
+    const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: {
-        role: 'user',
-        parts: [
-            { text: prompt }
-        ]
-      },
+      contents: prompt, // Direct string prompt is supported and safer for simple text
       config: {
         systemInstruction: `คุณคือ "หมอรักษ์" แพทย์ผู้ช่วย AI ประจำแอปพลิเคชัน "สุขภาพดีกับหมอรักษ์"
         - บุคลิก: สุภาพ, ใจดี, อบอุ่น, และมีความเป็นมืออาชีพเหมือนคุณหมอจริงๆ
@@ -50,6 +46,7 @@ export default async function handler(req: any, res: any) {
       }
     });
     
+    // Correct way to access text
     const text = response.text;
 
     return res.status(200).json({ text });
