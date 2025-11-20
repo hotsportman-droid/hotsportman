@@ -318,7 +318,7 @@ export const DrRakAvatar: React.FC = () => {
         setError(null);
 
         if (!process.env.API_KEY) {
-            setError("ไม่พบ API Key กรุณาตั้งค่า API Key");
+            setError("ไม่พบ API Key! กรุณาตั้งค่า Environment Variable ชื่อ 'API_KEY' ใน Vercel หรือไฟล์ .env");
             setInteractionState('idle');
             return;
         }
@@ -398,7 +398,7 @@ export const DrRakAvatar: React.FC = () => {
         if (!text.trim()) return;
 
         if (!process.env.API_KEY) {
-            setError("ไม่พบ API Key กรุณาตรวจสอบการตั้งค่า Environment Variable");
+            setError("ไม่พบ API Key! กรุณาตั้งค่า Environment Variable ชื่อ 'API_KEY' ใน Vercel หรือไฟล์ .env");
             return;
         }
 
@@ -479,7 +479,7 @@ export const DrRakAvatar: React.FC = () => {
             console.error("AI Error:", err);
             let errorMessage = "เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งค่ะ";
             if (err.message && err.message.includes('API Key')) {
-                errorMessage = "ไม่พบ API Key หรือ API Key ไม่ถูกต้อง";
+                errorMessage = "ไม่พบ API Key หรือ API Key ไม่ถูกต้อง (กรุณาตรวจสอบการตั้งค่าใน Vercel/Env)";
             }
             setError(errorMessage);
             setInteractionState('idle');
