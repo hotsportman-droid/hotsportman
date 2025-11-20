@@ -144,7 +144,6 @@ export const DrRakAvatar: React.FC = () => {
     const [transcript, setTranscript] = useState({ input: '', output: '' });
     const [analysisResult, setAnalysisResult] = useState<string | null>(null);
     const [micError, setMicError] = useState<string | null>(null);
-    const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
 
     const sessionPromiseRef = useRef<Promise<any> | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -345,24 +344,7 @@ export const DrRakAvatar: React.FC = () => {
         if (isSessionActive) {
             stopAllProcesses();
         } else {
-             if ((window as any).aistudio && !(await (window as any).aistudio.hasSelectedApiKey())) {
-                setIsActivationModalOpen(true);
-                return;
-            }
             await connectToDrRak();
-        }
-    };
-
-    const handleActivationConfirm = async () => {
-        setIsActivationModalOpen(false);
-        if ((window as any).aistudio) {
-            try {
-                await (window as any).aistudio.openSelectKey();
-                await connectToDrRak();
-            } catch (e) {
-                console.error("Could not open API key selection:", e);
-                setMicError("เกิดข้อผิดพลาดในการยืนยันตัวตนค่ะ");
-            }
         }
     };
     
@@ -443,22 +425,6 @@ export const DrRakAvatar: React.FC = () => {
                     </div>
                 )}
             </div>
-            <Modal isOpen={isActivationModalOpen} onClose={() => setIsActivationModalOpen(false)}>
-                <div className="text-center p-2">
-                    <h3 className="text-xl font-bold text-slate-800 mb-4">
-                        เริ่มต้นใช้งานหมอรักษ์
-                    </h3>
-                    <p className="text-slate-600 text-sm mb-6">
-                        เพื่อความปลอดภัยในการเชื่อมต่อ โปรดยืนยันตัวตนเพื่อเริ่มการสนทนาค่ะ (ขั้นตอนนี้ทำเพียงครั้งแรกเท่านั้น)
-                    </p>
-                    <button
-                        onClick={handleActivationConfirm}
-                        className="w-full bg-indigo-600 text-white font-bold py-2.5 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
-                    >
-                        ยืนยันและเริ่มคุย
-                    </button>
-                </div>
-            </Modal>
         </>
     );
 };
