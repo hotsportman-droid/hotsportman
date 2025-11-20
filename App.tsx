@@ -12,8 +12,8 @@ import { QRCodeModal } from './components/QRCodeModal';
 
 // Base friend count
 const BASE_FRIEND_COUNT = 450;
-// Use a specific, unique namespace to avoid collisions
-const COUNTER_NAMESPACE = 'dr-rak-official-counter-2024';
+// Namespace for the counter service (v6 for fresh start)
+const COUNTER_NAMESPACE = 'dr-rak-health-v6';
 const COUNTER_KEY = 'visits';
 
 const App: React.FC = () => {
@@ -32,50 +32,58 @@ const App: React.FC = () => {
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     setIsIOS(ios);
 
-    // --- REAL ORGANIC COUNTING LOGIC (Machine A = 451, Machine B = 452) ---
+    // --- ROBUST COUNTER LOGIC ---
     const updateFriendCount = async () => {
       if (effectRan.current) return;
       effectRan.current = true;
 
-      try {
-        // Unique LocalStorage Key for this version
-        const storageKey = `dr_rak_registered_${COUNTER_NAMESPACE}`;
-        const isRegistered = localStorage.getItem(storageKey);
-        
-        let countValue = 0;
+      const storageKey = `dr_rak_reg_${COUNTER_NAMESPACE}`;
+      const cacheCountKey = `dr_rak_last_count_${COUNTER_NAMESPACE}`;
+      const timestamp = Date.now(); // Cache buster
 
-        if (!isRegistered) {
-          // CASE: New Device -> Hit (Increment)
-          // Switch to api.counterapi.dev as countapi.xyz is defunct
-          // Endpoint: /up increments the counter
-          const response = await fetch(`https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up`);
-          const data = await response.json();
-          
-          // counterapi.dev returns { "count": number }
-          if (data && typeof data.count === 'number') {
-            countValue = data.count;
-            localStorage.setItem(storageKey, 'true');
-            console.log("New Device Registered. Count:", countValue);
-          }
-        } else {
-          // CASE: Existing Device -> Get (Fetch current)
-          // Endpoint: / returns current count without incrementing
-          const response = await fetch(`https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}`);
-          const data = await response.json();
-          
-          if (data && typeof data.count === 'number') {
-            countValue = data.count;
-            console.log("Existing Device. Current Count:", countValue);
-          }
+      try {
+        // 1. Try to load from local cache first (fast display)
+        const savedCount = localStorage.getItem(cacheCountKey);
+        if (savedCount) {
+            setTotalFriends(BASE_FRIEND_COUNT + parseInt(savedCount, 10));
         }
 
-        // Update State: Base + API Value
-        if (countValue > 0) {
-          setTotalFriends(BASE_FRIEND_COUNT + countValue);
+        const isRegistered = localStorage.getItem(storageKey);
+        let countValue = 0;
+        let response;
+
+        if (!isRegistered) {
+          // CASE: New Device -> Hit /up (Increment)
+          // Adding timestamp to URL to strictly avoid browser cache
+          response = await fetch(`https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${timestamp}`);
+        } else {
+          // CASE: Existing Device -> Hit / (Read Current)
+          response = await fetch(`https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}?t=${timestamp}`);
+        }
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data && typeof data.count === 'number') {
+                countValue = data.count;
+                
+                // Success: Update State & Cache
+                setTotalFriends(BASE_FRIEND_COUNT + countValue);
+                localStorage.setItem(cacheCountKey, countValue.toString());
+                
+                // Mark as registered if new
+                if (!isRegistered) {
+                    localStorage.setItem(storageKey, 'true');
+                    console.log("New Friend Registered!", countValue);
+                } else {
+                    console.log("Welcome back!", countValue);
+                }
+            }
+        } else {
+            console.warn("Counter API returned non-OK status");
         }
       } catch (error) {
         console.error("Counter API Error:", error);
-        // Fallback: Keep default (Base + 1) if offline or blocked
+        // Fallback: The state is already set from local cache (if exists) or default (Base+1)
       }
     };
 
