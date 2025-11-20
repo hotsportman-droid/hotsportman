@@ -1,70 +1,65 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MicIcon, StopIcon, StethoscopeIcon, CheckCircleIcon, ExclamationIcon } from './icons';
+import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration, Blob } from "@google/genai";
 
-// Fix: Add missing type definitions for the Web Speech API to resolve compilation errors.
-interface SpeechRecognition extends EventTarget {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  onresult: (event: SpeechRecognitionEvent) => void;
-  onend: () => void;
-  onerror: (event: SpeechRecognitionErrorEvent) => void;
-  start: () => void;
-  stop: () => void;
+// --- TYPES ---
+interface AnalysisData {
+  symptoms: string;
+  advice: string;
+  precautions: string;
 }
 
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-}
-
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
-  resultIndex: number;
-}
-
-interface SpeechRecognitionResultList {
-  [index: number]: SpeechRecognitionResult;
-  length: number;
-  item(index: number): SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionResult {
-  [index: number]: SpeechRecognitionAlternative;
-  isFinal: boolean;
-  length: number;
-  item(index: number): SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognition;
-    webkitSpeechRecognition: new () => SpeechRecognition;
+// --- AUDIO HELPERS ---
+function createBlob(data: Float32Array): Blob {
+  const l = data.length;
+  const int16 = new Int16Array(l);
+  for (let i = 0; i < l; i++) {
+    int16[i] = data[i] * 32768;
   }
+  const bytes = new Uint8Array(int16.buffer);
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const base64 = btoa(binary);
+  
+  return {
+    data: base64,
+    mimeType: 'audio/pcm;rate=16000',
+  };
 }
 
-// --- PARSING & RENDERING HELPERS ---
-const parseAnalysisResult = (text: string) => {
-  const sections = {
-    symptoms: '',
-    advice: '',
-    precautions: ''
-  };
-  if (!text) return sections;
-  const symptomsMatch = text.match(/### อาการที่ตรวจพบ([\s\S]*?)(?=###|$)/);
-  const adviceMatch = text.match(/### คำแนะนำเบื้องต้น([\s\S]*?)(?=###|$)/);
-  const precautionsMatch = text.match(/### ข้อควรระวัง([\s\S]*?)(?=###|$)/);
+function decodeAudio(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
 
-  if (symptomsMatch) sections.symptoms = symptomsMatch[1].trim();
-  if (adviceMatch) sections.advice = adviceMatch[1].trim();
-  if (precautionsMatch) sections.precautions = precautionsMatch[1].trim();
-  
-  return sections;
-};
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
 
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}
+
+// --- UI HELPERS ---
 const MarkdownContent = ({ text }: { text: string }) => {
     if (!text) return <p className="text-slate-400 italic">ไม่มีข้อมูล</p>;
     const lines = text.split('\n').filter(line => line.trim() !== '');
@@ -90,8 +85,6 @@ const MarkdownContent = ({ text }: { text: string }) => {
     return <>{elements}</>;
 };
 
-
-// --- SUB COMPONENTS ---
 const DrRakImage = ({ isSpeaking }: { isSpeaking: boolean }) => (
   <svg viewBox="0 0 400 400" className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
      <defs>
@@ -123,198 +116,252 @@ const DrRakImage = ({ isSpeaking }: { isSpeaking: boolean }) => (
       <path d="M185 240 Q200 250 215 240" stroke="#D84315" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
       <path d="M150 310 C150 370 250 370 250 310" stroke="#475569" strokeWidth="5" fill="none" strokeLinecap="round"/>
       <circle cx="200" cy="370" r="14" fill="#94A3B8" stroke="#334155" strokeWidth="2"/>
+      {/* Animated mouth for speaking */}
+      {isSpeaking && (
+        <ellipse cx="200" cy="250" rx="10" ry="5" fill="#D84315" opacity="0.6" className="animate-pulse" />
+      )}
     </g>
   </svg>
 );
 
-// --- MAIN COMPONENT ---
+const analysisTool: FunctionDeclaration = {
+  name: 'updateAnalysis',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      symptoms: { type: Type.STRING, description: "List of symptoms detected from user's description" },
+      advice: { type: Type.STRING, description: "Initial health advice based on symptoms" },
+      precautions: { type: Type.STRING, description: "Warning signs or precautions to take" }
+    },
+    required: ['symptoms', 'advice', 'precautions']
+  }
+};
+
 export const DrRakAvatar: React.FC = () => {
-    const [isListening, setIsListening] = useState(false);
+    const [isConnected, setIsConnected] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const [statusText, setStatusText] = useState('แตะปุ่มไมค์เพื่อเริ่มคุยค่ะ');
-    const [transcript, setTranscript] = useState({ input: '', output: '' });
-    const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+    const [analysisResult, setAnalysisResult] = useState<AnalysisData | null>(null);
     const [error, setError] = useState<string | null>(null);
+    
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [nextStartTime, setNextStartTime] = useState<number>(0);
+    const inputAudioContextRef = useRef<AudioContext | null>(null);
+    const outputAudioContextRef = useRef<AudioContext | null>(null);
+    const sessionRef = useRef<any>(null);
+    const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
-    const recognitionRef = useRef<SpeechRecognition | null>(null);
-    const finalTranscriptRef = useRef('');
-
-    const processRequest = async (text: string) => {
-        if (!text.trim()) {
-            setStatusText('ไม่ได้ยินเสียงพูดค่ะ ลองใหม่อีกครั้ง');
-            return;
-        };
-
-        setStatusText('กำลังประมวลผล...');
-
-        try {
-            const apiResponse = await fetch('/api/gemini', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ prompt: text }),
-            });
-
-            if (!apiResponse.ok) {
-                const errorData = await apiResponse.json().catch(() => ({ error: 'ไม่สามารถอ่านข้อผิดพลาดจากเซิร์ฟเวอร์ได้' }));
-                throw new Error(errorData.error || `การเชื่อมต่อล้มเหลว (สถานะ: ${apiResponse.status})`);
-            }
-            
-            const data = await apiResponse.json();
-            const responseText = data.text;
-
-            if (!responseText) throw new Error("Empty response from AI");
-
-            if (responseText.includes('<analysis>')) {
-                const match = responseText.match(/<analysis>([\s\S]*)<\/analysis>/);
-                if (match && match[1]) {
-                    setAnalysisResult(match[1].trim());
-                    speakText('ผลการวิเคราะห์แสดงอยู่ด้านล่างแล้วนะคะ');
-                }
-            } else {
-                setAnalysisResult(null);
-                speakText(responseText);
-            }
-        } catch (err: any) {
-            console.error("API Request Error:", err);
-            setError(`ขออภัยค่ะ เกิดข้อผิดพลาด: ${err.message}`);
-            setStatusText('แตะปุ่มไมค์เพื่อเริ่มคุยค่ะ');
-        }
-    };
-
-    const speakText = (text: string) => {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'th-TH';
-        
-        utterance.onstart = () => {
-            setIsSpeaking(true);
-            setTranscript(prev => ({ ...prev, output: text }));
-        };
-        utterance.onend = () => {
-            setIsSpeaking(false);
-            setStatusText('แตะปุ่มไมค์เพื่อเริ่มคุยค่ะ');
-        };
-        utterance.onerror = (event) => {
-            console.error('Speech Synthesis Error:', event.error);
-            setError('ขออภัยค่ะ เกิดข้อผิดพลาดในการพูด');
-            setIsSpeaking(false);
-            setStatusText('แตะปุ่มไมค์เพื่อเริ่มคุยค่ะ');
-        };
-        window.speechSynthesis.speak(utterance);
-    };
-
-    useEffect(() => {
-        const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognitionAPI) {
-            setError('เบราว์เซอร์ของคุณไม่รองรับการแปลงเสียงเป็นข้อความค่ะ');
-            return;
-        }
-
-        const recognition = new SpeechRecognitionAPI();
-        recognition.lang = 'th-TH';
-        recognition.interimResults = true;
-        recognition.continuous = false;
-        recognitionRef.current = recognition;
-
-        recognition.onresult = (event) => {
-            let interim = '';
-            let final = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    final += event.results[i][0].transcript;
-                } else {
-                    interim += event.results[i][0].transcript;
-                }
-            }
-            finalTranscriptRef.current = final.trim();
-            setTranscript({ input: final || interim, output: '' });
-        };
-
-        recognition.onend = () => {
-            setIsListening(false);
-            if(finalTranscriptRef.current) {
-                processRequest(finalTranscriptRef.current);
-            }
-        };
-
-        recognition.onerror = (event) => {
-            console.error('Speech Recognition Error:', event.error);
-            setError(`เกิดข้อผิดพลาดในการรับเสียง: ${event.error}`);
-            setIsListening(false);
-        };
-
-        return () => {
-            window.speechSynthesis.cancel();
-            if (recognitionRef.current) {
-                recognitionRef.current.stop();
-            }
-        };
+    const disconnect = useCallback(() => {
+      if (sessionRef.current) {
+        // We cannot explicitly close the session object in the current SDK version easily if not exposed,
+        // but we can stop our processing.
+        sessionRef.current = null;
+      }
+      
+      if (inputAudioContextRef.current) {
+        inputAudioContextRef.current.close();
+        inputAudioContextRef.current = null;
+      }
+      
+      if (outputAudioContextRef.current) {
+        outputAudioContextRef.current.close();
+        outputAudioContextRef.current = null;
+      }
+      
+      sourcesRef.current.forEach(source => source.stop());
+      sourcesRef.current.clear();
+      
+      setIsConnected(false);
+      setIsSpeaking(false);
+      setNextStartTime(0);
     }, []);
 
-    const handleToggleSystem = () => {
-        setError(null);
-        if (isListening) {
-            recognitionRef.current?.stop();
-        } else if (isSpeaking) {
-            window.speechSynthesis.cancel();
-            setIsSpeaking(false);
-            setStatusText('แตะปุ่มไมค์เพื่อเริ่มคุยค่ะ');
-        } else {
-            if (recognitionRef.current) {
-                setTranscript({ input: '', output: '' });
-                setAnalysisResult(null);
-                finalTranscriptRef.current = '';
-                try {
-                    recognitionRef.current.start();
-                    setIsListening(true);
-                    setStatusText('กำลังฟังอยู่ค่ะ...');
-                } catch (e) {
-                    console.error("Error starting recognition:", e);
-                    setError("ไม่สามารถเริ่มการรับเสียงได้ค่ะ");
+    const connect = async () => {
+      setError(null);
+      setAnalysisResult(null);
+
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        
+        // Setup Audio Contexts
+        const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+        const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        inputAudioContextRef.current = inputCtx;
+        outputAudioContextRef.current = outputCtx;
+
+        // Get Microphone Stream
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Connect to Live API
+        const sessionPromise = ai.live.connect({
+          model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+          callbacks: {
+            onopen: () => {
+              setIsConnected(true);
+              
+              // Setup Audio Input Processing
+              const source = inputCtx.createMediaStreamSource(stream);
+              const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
+              
+              scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
+                const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
+                const pcmBlob = createBlob(inputData);
+                
+                sessionPromise.then((session) => {
+                  if (isConnected) { // Double check connection state
+                    session.sendRealtimeInput({ media: pcmBlob });
+                  }
+                });
+              };
+              
+              source.connect(scriptProcessor);
+              scriptProcessor.connect(inputCtx.destination);
+            },
+            onmessage: async (message: LiveServerMessage) => {
+              // Handle Tool Calls
+              if (message.toolCall) {
+                for (const fc of message.toolCall.functionCalls) {
+                  if (fc.name === 'updateAnalysis') {
+                    const args = fc.args as unknown as AnalysisData;
+                    setAnalysisResult(args);
+                    
+                    // Send success response
+                    sessionPromise.then((session) => {
+                       session.sendToolResponse({
+                        functionResponses: {
+                          id: fc.id,
+                          name: fc.name,
+                          response: { result: "Analysis updated on screen." }
+                        }
+                       });
+                    });
+                  }
                 }
-            } else {
-                setError('ระบบรู้จำเสียงยังไม่พร้อมใช้งานค่ะ');
+              }
+
+              // Handle Audio Output
+              const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+              if (base64Audio && outputCtx) {
+                setIsSpeaking(true);
+                
+                // Sync timing
+                const currentTime = outputCtx.currentTime;
+                let startTime = nextStartTime;
+                if (startTime < currentTime) startTime = currentTime;
+                
+                const audioBuffer = await decodeAudioData(
+                  decodeAudio(base64Audio),
+                  outputCtx,
+                  24000,
+                  1
+                );
+                
+                const source = outputCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(outputCtx.destination);
+                
+                source.addEventListener('ended', () => {
+                   sourcesRef.current.delete(source);
+                   if (sourcesRef.current.size === 0) {
+                     setIsSpeaking(false);
+                   }
+                });
+                
+                source.start(startTime);
+                setNextStartTime(startTime + audioBuffer.duration);
+                sourcesRef.current.add(source);
+              }
+
+              // Handle Interruption
+              if (message.serverContent?.interrupted) {
+                 sourcesRef.current.forEach(s => s.stop());
+                 sourcesRef.current.clear();
+                 setNextStartTime(0);
+                 setIsSpeaking(false);
+              }
+            },
+            onclose: () => {
+              disconnect();
+            },
+            onerror: (err) => {
+              console.error("Live API Error:", err);
+              setError("เกิดข้อผิดพลาดในการเชื่อมต่อ");
+              disconnect();
             }
-        }
+          },
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+            },
+            systemInstruction: `คุณคือ "หมอรักษ์" แพทย์ผู้ช่วย AI
+            - หน้าที่: รับฟังอาการและให้คำแนะนำสุขภาพเบื้องต้นด้วยน้ำเสียงที่อบอุ่นและเป็นกันเอง
+            - การตอบโต้: 
+              1. หากผู้ใช้ปรึกษาอาการป่วย: คุณต้องเรียกใช้เครื่องมือ 'updateAnalysis' เพื่อแสดงข้อมูลบนหน้าจอ และพูดสรุปคำแนะนำสั้นๆ ให้กำลังใจผู้ป่วย ไม่ต้องอ่านรายละเอียดทั้งหมดในเครื่องมือ
+              2. หากเป็นการพูดคุยทั่วไป: พูดคุยโต้ตอบตามปกติ
+            - ห้ามวินิจฉัยโรคหรือสั่งยาเด็ดขาด ให้แนะนำพบแพทย์หากอาการรุนแรง`,
+            tools: [{ functionDeclarations: [analysisTool] }]
+          }
+        });
+        
+        sessionRef.current = sessionPromise;
+
+      } catch (e: any) {
+        console.error("Connection failed", e);
+        setError("ไม่สามารถเข้าถึงไมโครโฟนหรือเชื่อมต่อได้");
+        disconnect();
+      }
     };
 
-    const displayStatus = () => {
-        if (error) return <span className="text-red-600 font-semibold">{error}</span>;
-        if (isSpeaking) return `หมอรักษ์: ${transcript.output}`;
-        if (isListening || transcript.input) return `คุณ: ${transcript.input || '...'}`;
-        return statusText;
+    // Cleanup on unmount
+    useEffect(() => {
+      return () => {
+        disconnect();
+      };
+    }, [disconnect]);
+
+    const toggleConnection = () => {
+      if (isConnected) {
+        disconnect();
+      } else {
+        connect();
+      }
     };
-    
+
     return (
         <div className="bg-white rounded-2xl shadow-lg border-2 border-indigo-50 p-6 flex flex-col items-center text-center max-w-lg mx-auto">
             <div className="relative mb-4 w-32 h-32">
                 <DrRakImage isSpeaking={isSpeaking} />
-                {isListening && (
-                    <div className="absolute inset-0 rounded-full border-4 border-indigo-400 border-t-transparent animate-spin"></div>
+                {isConnected && !isSpeaking && (
+                    <div className="absolute inset-0 rounded-full border-4 border-indigo-400 border-t-transparent animate-spin opacity-30"></div>
                 )}
             </div>
-            <h3 className="text-xl font-bold text-slate-800 mb-2">หมอรักษ์ชวนคุย</h3>
-            <p className="text-slate-600 text-sm min-h-[40px] flex items-center justify-center px-4 break-words">
-                {displayStatus()}
+            <h3 className="text-xl font-bold text-slate-800 mb-2">หมอรักษ์ (Live)</h3>
+            <p className="text-slate-600 text-sm min-h-[24px] mb-4">
+                {error ? <span className="text-red-500">{error}</span> : 
+                 isConnected ? (isSpeaking ? "กำลังพูด..." : "กำลังฟังคุณอยู่ค่ะ...") : 
+                 "แตะปุ่มไมค์เพื่อเริ่มสนทนาสด"}
             </p>
 
             <button
-                onClick={handleToggleSystem}
-                className={`mt-4 rounded-full flex items-center justify-center w-16 h-16 transition-all duration-300 shadow-lg ${
-                    isListening || isSpeaking ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white'
+                onClick={toggleConnection}
+                className={`rounded-full flex items-center justify-center w-16 h-16 transition-all duration-300 shadow-lg transform hover:scale-105 ${
+                    isConnected ? 'bg-red-500 text-white shadow-red-200' : 'bg-indigo-600 text-white shadow-indigo-200'
                 }`}
-                aria-label={isListening || isSpeaking ? "หยุด" : "เริ่มการสนทนา"}
+                aria-label={isConnected ? "วางสาย" : "เริ่มสนทนา"}
             >
-                {isListening || isSpeaking ? <StopIcon className="w-8 h-8"/> : <MicIcon className="w-8 h-8" />}
+                {isConnected ? <StopIcon className="w-8 h-8"/> : <MicIcon className="w-8 h-8" />}
             </button>
+
             {analysisResult && (
-                <div className="mt-6 w-full text-left animate-fade-in space-y-4" role="region" aria-label="ผลการวิเคราะห์">
-                    <h4 className="text-lg font-bold text-slate-800 flex items-center text-center justify-center">
-                        👩‍⚕️ ผลการวิเคราะห์จากหมอรักษ์
-                    </h4>
-                    <div className="bg-blue-50 rounded-xl p-5 border border-blue-100">
+                <div className="mt-8 w-full text-left animate-fade-in space-y-4">
+                    <div className="flex items-center justify-center mb-2">
+                         <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold">
+                            ผลการวิเคราะห์ล่าสุด
+                         </span>
+                    </div>
+                    
+                    <div className="bg-blue-50 rounded-xl p-5 border border-blue-100 shadow-sm">
                         <div className="flex items-center mb-3">
                             <div className="p-2 bg-blue-100 rounded-lg text-blue-600 mr-3">
                                 <StethoscopeIcon className="w-6 h-6" />
@@ -322,10 +369,11 @@ export const DrRakAvatar: React.FC = () => {
                             <h5 className="font-bold text-blue-800 text-lg">อาการที่ตรวจพบ</h5>
                         </div>
                         <div className="text-slate-700 leading-relaxed pl-1 text-sm">
-                            <MarkdownContent text={parseAnalysisResult(analysisResult).symptoms} />
+                            <MarkdownContent text={analysisResult.symptoms} />
                         </div>
                     </div>
-                    <div className="bg-green-50 rounded-xl p-5 border border-green-100">
+
+                    <div className="bg-green-50 rounded-xl p-5 border border-green-100 shadow-sm">
                         <div className="flex items-center mb-3">
                             <div className="p-2 bg-green-100 rounded-lg text-green-600 mr-3">
                                 <CheckCircleIcon className="w-6 h-6" />
@@ -333,10 +381,11 @@ export const DrRakAvatar: React.FC = () => {
                             <h5 className="font-bold text-green-800 text-lg">คำแนะนำเบื้องต้น</h5>
                         </div>
                         <div className="text-slate-700 leading-relaxed pl-1 text-sm">
-                            <MarkdownContent text={parseAnalysisResult(analysisResult).advice} />
+                            <MarkdownContent text={analysisResult.advice} />
                         </div>
                     </div>
-                    <div className="bg-amber-50 rounded-xl p-5 border border-amber-100">
+
+                    <div className="bg-amber-50 rounded-xl p-5 border border-amber-100 shadow-sm">
                         <div className="flex items-center mb-3">
                             <div className="p-2 bg-amber-100 rounded-lg text-amber-600 mr-3">
                                 <ExclamationIcon className="w-6 h-6" />
@@ -344,7 +393,7 @@ export const DrRakAvatar: React.FC = () => {
                             <h5 className="font-bold text-amber-800 text-lg">ข้อควรระวัง</h5>
                         </div>
                         <div className="text-slate-700 leading-relaxed pl-1 text-sm">
-                            <MarkdownContent text={parseAnalysisResult(analysisResult).precautions} />
+                            <MarkdownContent text={analysisResult.precautions} />
                         </div>
                     </div>
                 </div>
