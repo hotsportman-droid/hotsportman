@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { StethoscopeIcon, CheckCircleIcon, ExclamationIcon, SpeakerWaveIcon, MicIcon, StopIcon } from './icons';
-import { GoogleGenAI, Type } from "@google/genai";
+import { StethoscopeIcon, CheckCircleIcon, ExclamationIcon, SpeakerWaveIcon, MicIcon, StopIcon, VolumeOffIcon } from './icons';
+import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
 // --- Types for Speech Recognition ---
 // Use a type assertion to handle non-standard browser APIs
@@ -126,9 +126,24 @@ export const DrRakAvatar: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [recognition, setRecognition] = useState<any>(null);
     
+    // Audio State
+    const [isMuted, setIsMuted] = useState(false);
+    const isMutedRef = useRef(false); // Ref to hold current mute state for async access
+
     // Refs for controlling flow
     const recognitionRef = useRef<any>(null);
     const isListeningRef = useRef(false);
+
+    // Sync ref and handle immediate mute action
+    useEffect(() => {
+        isMutedRef.current = isMuted;
+        if (isMuted) {
+            window.speechSynthesis.cancel();
+            if (interactionState === 'speaking') {
+                setInteractionState('idle');
+            }
+        }
+    }, [isMuted, interactionState]);
 
     // Initialize Speech Recognition
     useEffect(() => {
@@ -177,6 +192,13 @@ export const DrRakAvatar: React.FC = () => {
         if (!text) {
              if (onEndCallback) onEndCallback();
              return;
+        }
+
+        // Check ref for most up-to-date value
+        if (isMutedRef.current) {
+            // If muted, just call callback after short delay to simulate processing
+            if (onEndCallback) setTimeout(onEndCallback, 100);
+            return;
         }
 
         const utterance = new SpeechSynthesisUtterance(text);
@@ -293,6 +315,13 @@ export const DrRakAvatar: React.FC = () => {
 
     const handleGreeting = async () => {
         setInteractionState('processing_greeting');
+        setError(null);
+
+        if (!process.env.API_KEY) {
+            setError("ไม่พบ API Key กรุณาตั้งค่า API Key");
+            setInteractionState('idle');
+            return;
+        }
         
         // Fallback function if geolocation fails or times out
         const fallbackGreeting = () => {
@@ -368,6 +397,11 @@ export const DrRakAvatar: React.FC = () => {
         const text = textToAnalyze || inputText;
         if (!text.trim()) return;
 
+        if (!process.env.API_KEY) {
+            setError("ไม่พบ API Key กรุณาตรวจสอบการตั้งค่า Environment Variable");
+            return;
+        }
+
         setInteractionState('processing_analysis');
         setAnalysis(null);
         setError(null);
@@ -394,18 +428,27 @@ export const DrRakAvatar: React.FC = () => {
                             precautions: { type: Type.STRING, description: "ข้อควรระวังหรือสัญญาณอันตรายที่ต้องไปพบแพทย์" }
                         },
                         required: ["speech", "symptoms", "advice", "precautions"]
-                    }
+                    },
+                    // Add safety settings to allow medical context which might be flagged as 'Dangerous Content'
+                    safetySettings: [
+                        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH }
+                    ]
                 }
             });
 
-            const resultText = response.text || "{}";
+            // Clean markdown code blocks if present (Gemini sometimes adds ```json ... ```)
+            let resultText = response.text || "{}";
+            resultText = resultText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+
             let result;
-            
             try {
                 result = JSON.parse(resultText);
             } catch (e) {
-                console.error("JSON Parse Error", e);
-                throw new Error("Invalid JSON response");
+                console.error("JSON Parse Error", e, resultText);
+                throw new Error("Invalid JSON response from AI");
             }
 
             const symptoms = result.symptoms || "-";
@@ -432,9 +475,13 @@ export const DrRakAvatar: React.FC = () => {
             
             speak(fullReadOut);
 
-        } catch (err) {
+        } catch (err: any) {
             console.error("AI Error:", err);
-            setError("เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งค่ะ");
+            let errorMessage = "เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งค่ะ";
+            if (err.message && err.message.includes('API Key')) {
+                errorMessage = "ไม่พบ API Key หรือ API Key ไม่ถูกต้อง";
+            }
+            setError(errorMessage);
             setInteractionState('idle');
         }
     };
@@ -444,6 +491,15 @@ export const DrRakAvatar: React.FC = () => {
             {/* Top Gradient Decoration */}
             <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-pink-400 via-rose-400 to-indigo-400"></div>
             
+            {/* Mute Button */}
+            <button
+                onClick={() => setIsMuted(!isMuted)}
+                className="absolute top-4 right-4 z-20 p-2 rounded-full bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-pink-500 transition-colors border border-slate-100 shadow-sm"
+                title={isMuted ? "เปิดเสียงอ่าน" : "ปิดเสียงอ่าน"}
+            >
+                {isMuted ? <VolumeOffIcon className="w-5 h-5" /> : <SpeakerWaveIcon className="w-5 h-5" />}
+            </button>
+
             <div className="w-full max-w-2xl z-10">
                 {/* Avatar Section with Interactive Mic */}
                 <DrRakImage onMicClick={handleMicClick} interactionState={interactionState} />
