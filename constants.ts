@@ -9,7 +9,7 @@ export const SYSTEM_CONFIG = {
   // เมื่อใส่แล้ว ผู้ใช้งานทุกคนจะใช้งานได้ทันทีโดยไม่ต้องตั้งค่าเอง
   // วิธีทำ: GLOBAL_API_KEY: 'AIzaSy....(รหัสของท่าน)...', 
   
-  GLOBAL_API_KEY: 'AIzaSyCEVji7KSIl8z0LVhNVvtnyE8kFbQS3-jE', 
+  GLOBAL_API_KEY: 'AIzaSyDGQ1SiJuz-xEDxdZPWy3iCTlb8i7PAvm8', 
 };
 
 export const HEALTH_CHECKS: HealthCheckItem[] = [

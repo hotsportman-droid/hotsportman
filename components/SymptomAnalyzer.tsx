@@ -1,12 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { BrainIcon, MicIcon, SpeakerWaveIcon, StopIcon, SettingsIcon, StethoscopeIcon, CheckCircleIcon, ExclamationIcon } from './icons';
 import { Modal } from './Modal';
 import { AdBanner } from './AdBanner';
 import { GoogleGenAI } from '@google/genai';
 import { SYSTEM_CONFIG } from '../constants';
-
-const MAX_DAILY_LIMIT = 100000; // Increased limit for simulation
 
 interface SymptomAnalyzerProps {
   onAnalysisSuccess?: () => void;
@@ -130,30 +127,6 @@ const MarkdownContent = ({ text }: { text: string }) => {
     return <>{elements}</>;
 };
 
-// --- 3D AVATAR MOCKUP ---
-const DoctorAvatar = ({ isSpeaking }: { isSpeaking: boolean }) => {
-  return (
-    <div className="relative w-32 h-32 mx-auto mb-4">
-        {/* Avatar Container */}
-        <div className={`w-full h-full rounded-full overflow-hidden border-4 ${isSpeaking ? 'border-indigo-400 animate-pulse shadow-[0_0_15px_rgba(99,102,241,0.5)]' : 'border-slate-200'} bg-indigo-50 relative transition-all duration-300`}>
-            <img 
-                src="https://img2.pic.in.th/pic/DrRukDolaAvatar.jpg" 
-                alt="Dr. Ruk Avatar" 
-                className={`w-full h-full object-cover ${isSpeaking ? 'scale-110' : 'scale-100'} transition-transform duration-500`}
-            />
-        </div>
-        {/* Status Indicator */}
-        <div className={`absolute bottom-1 right-1 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center ${isSpeaking ? 'bg-green-500' : 'bg-slate-400'}`}>
-            {isSpeaking ? (
-                 <div className="w-3 h-3 bg-white rounded-full animate-ping"></div>
-            ) : (
-                 <div className="w-2 h-2 bg-white rounded-full"></div>
-            )}
-        </div>
-    </div>
-  );
-};
-
 export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSuccess }) => {
   const [symptoms, setSymptoms] = useState('');
   const [result, setResult] = useState('');
@@ -163,10 +136,9 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
   
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
-  const [dailyUsage, setDailyUsage] = useState(0);
   
-  // Voice Input States
-  const [isMonitoring, setIsMonitoring] = useState(false); // New: "Always On" Switch
+  // Voice Input States (Simplified for one-shot STT)
+  const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
   // Voice Output States
@@ -176,9 +148,6 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
   const [speechRate, setSpeechRate] = useState(0.75);
   const [selectedVoiceURI, setSelectedVoiceURI] = useState<string>('');
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-
-  // Wake Word Cooldown to prevent spamming
-  const wakeWordCooldownRef = useRef(false);
 
   const stopSpeaking = () => {
     shouldSpeakRef.current = false;
@@ -207,23 +176,14 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
     if (savedRate) setSpeechRate(parseFloat(savedRate));
     const savedVoice = localStorage.getItem('shc_voice_uri');
     if (savedVoice) setSelectedVoiceURI(savedVoice);
-    const today = new Date().toDateString();
-    const storedDate = localStorage.getItem('shc_usage_date');
-    const storedCount = parseInt(localStorage.getItem('shc_usage_count') || '0', 10);
 
-    if (storedDate !== today) {
-      localStorage.setItem('shc_usage_date', today);
-      localStorage.setItem('shc_usage_count', '0');
-      setDailyUsage(0);
-    } else {
-      setDailyUsage(storedCount);
-    }
     return () => {
       stopSpeaking();
       if ('speechSynthesis' in window) {
           window.speechSynthesis.onvoiceschanged = null;
       }
       if (recognitionRef.current) {
+          recognitionRef.current.onend = null;
           recognitionRef.current.stop();
       }
     };
@@ -303,144 +263,53 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
     playNext();
   };
 
-  const isInAppBrowser = () => {
-    const ua = navigator.userAgent || navigator.vendor || (window as any).opera;
-    return (ua.indexOf("FBAN") > -1) || (ua.indexOf("FBAV") > -1) || (ua.indexOf("Line") > -1);
-  };
-
-  // --- WAKE WORD RESPONSE LOGIC ---
-  const triggerWakeWordResponse = () => {
-      if (wakeWordCooldownRef.current) return;
-      
-      wakeWordCooldownRef.current = true;
-      
-      // 1. Environment Simulation
-      const weathers = [
-          { type: 'ร้อนจัด', temp: '38 องศา', pm: '150 (เริ่มมีผลกระทบ)', advice: 'อากาศร้อนและฝุ่นเยอะแบบนี้ เพื่อนหมอรักษ์งดทำกิจกรรมกลางแจ้งและดื่มน้ำเยอะๆ นะครับ อย่าลืมสวมหน้ากาก N95 ด้วยครับ' },
-          { type: 'ฝนตก', temp: '28 องศา', pm: '45 (ปานกลาง)', advice: 'ช่วงนี้มีฝนตก ระวังเปียกฝนและรักษาสุขภาพด้วยนะครับ ถ้าโดนละอองฝนรีบอาบน้ำสระผมทันทีนะครับ' },
-          { type: 'อากาศดี', temp: '26 องศา', pm: '25 (ดีมาก)', advice: 'วันนี้อากาศดีมากครับ ค่าฝุ่นน้อย เหมาะกับการออกกำลังกายเบาๆ หรือสูดอากาศบริสุทธิ์ครับ' }
-      ];
-      const env = weathers[Math.floor(Math.random() * weathers.length)];
-
-      const response = `สวัสดีค่ะ เพื่อนหมอรักษ์ วันนี้อากาศ${env.type} อุณหภูมิประมาณ ${env.temp} ค่าฝุ่น PM 2.5 อยู่ที่ ${env.pm} ครับ ${env.advice}`;
-      
-      setResult(response); // Show text as well
-      speak(response);
-
-      // Cooldown reset
-      setTimeout(() => {
-          wakeWordCooldownRef.current = false;
-      }, 8000);
-  };
-
-  // --- ALWAYS ON MONITORING ---
-  const toggleMonitoring = () => {
-    if (isMonitoring) {
-        // Turn Off
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-        }
-        setIsMonitoring(false);
-        speak("ปิดระบบรับฟังอัตโนมัติแล้วครับ");
+  const handleMicClick = () => {
+    if (isListening) {
+        recognitionRef.current?.stop();
         return;
     }
 
-    // Turn On
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        speak('เครื่องของคุณไม่รองรับการสั่งงานด้วยเสียงครับ');
+        setError('เครื่องของคุณไม่รองรับการสั่งงานด้วยเสียงครับ');
         return;
-    }
-
-    if (isInAppBrowser() && !navigator.mediaDevices?.getUserMedia) {
-         setError('กรุณาเปิดผ่าน Chrome หรือ Safari เพื่อใช้ไมโครโฟน');
-         return;
     }
 
     setError(null);
-    speak("เปิดระบบรับฟังแล้วครับ เรียก สวัสดีหมอรักษ์ ได้เลยครับ");
-    setIsMonitoring(true);
-  };
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'th-TH';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+    recognitionRef.current = recognition;
+    
+    let finalTranscript = symptoms;
 
-  // Effect to handle the Recognition Lifecycle Loop
-  useEffect(() => {
-      if (!isMonitoring) return;
-
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (!SpeechRecognition) return;
-
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'th-TH';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.continuous = true; // Try continuous first
-
-      recognition.onresult = (event: any) => {
-        const lastIndex = event.results.length - 1;
-        const transcript = event.results[lastIndex][0].transcript.trim();
-        
-        // Check for Wake Word
-        if (transcript.includes("สวัสดีหมอรักษ์") || transcript.includes("สวัสดีหมอรัก") || transcript.includes("หวัดดีหมอรักษ์")) {
-            triggerWakeWordResponse();
-        } else {
-            // Optional: If not wake word, maybe update partial symptoms?
-            // For now, we just ignore as requested until wake word is heard.
-            // Or we can display what is heard faintly
-             setSymptoms((prev) => {
-                // Only append if it's a potential symptom and not just noise, 
-                // but user asked strictly for wake word response. 
-                // Let's show it in the box anyway so they know it works.
-                // But don't trigger analysis.
-                return transcript; 
-            });
+    recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += (finalTranscript ? ' ' : '') + event.results[i][0].transcript.trim();
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
         }
-      };
+        setSymptoms(finalTranscript + interimTranscript);
+    };
 
-      recognition.onerror = (event: any) => {
-        console.error("Recognition Error", event.error);
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-            setIsMonitoring(false);
-            setError("ไม่ได้รับอนุญาตให้ใช้ไมค์ ระบบรับฟังอัตโนมัติถูกปิด");
-        }
-        // If no-speech or network error, we ignore and let onend restart it
-      };
+    recognition.onerror = (event: any) => {
+        if (event.error === 'not-allowed') setError('กรุณาอนุญาตให้ใช้ไมโครโฟนครับ');
+        else if (event.error === 'no-speech') setError('ไม่ได้ยินเสียงพูด กรุณาลองใหม่ครับ');
+        else setError('เกิดข้อผิดพลาดในการรับเสียงครับ');
+        setIsListening(false);
+    };
+    
+    recognition.onend = () => {
+        setIsListening(false);
+        setSymptoms(prev => prev.trim());
+    };
 
-      recognition.onend = () => {
-          // Auto-Restart Loop
-          if (isMonitoring) {
-              try {
-                  // Add small delay to prevent CPU hogging in loop
-                  setTimeout(() => {
-                      if (isMonitoring) recognition.start();
-                  }, 200);
-              } catch (e) {
-                  console.error("Restart failed", e);
-              }
-          }
-      };
-
-      recognitionRef.current = recognition;
-      try {
-          recognition.start();
-      } catch (e) {
-          console.error("Start failed", e);
-          setIsMonitoring(false);
-      }
-
-      return () => {
-          if (recognitionRef.current) recognitionRef.current.stop();
-      };
-  }, [isMonitoring]);
-
-
-  const initiateAnalysis = async () => {
-    if (dailyUsage >= MAX_DAILY_LIMIT) {
-        const msg = 'วันนี้ใช้งานครบโควต้าแล้ว พรุ่งนี้มาใหม่นะครับ';
-        setError(msg);
-        speak(msg);
-        return;
-    }
-    performAnalysis();
+    recognition.start();
+    setIsListening(true);
   };
 
   const performAnalysis = async () => {
@@ -483,9 +352,6 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
       }
 
       setResult(text);
-      const newCount = dailyUsage + 1;
-      setDailyUsage(newCount);
-      localStorage.setItem('shc_usage_count', newCount.toString());
       if (onAnalysisSuccess) onAnalysisSuccess();
       
       const intro = "วิเคราะห์เสร็จแล้วครับ ";
@@ -505,19 +371,15 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
       <div className="bg-white rounded-2xl shadow-lg border-2 border-indigo-50 overflow-hidden flex flex-col h-full relative">
         <div className="p-6 flex-grow flex flex-col">
           
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center">
-                <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mr-4 shrink-0 shadow-sm">
-                  <BrainIcon className="w-8 h-8" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-slate-800">หมอรักษ์ ประจำบ้าน</h3>
-                  <p className="text-slate-500 text-sm">ผู้ช่วยวิเคราะห์อาการเบื้องต้น</p>
-                </div>
-            </div>
+          <div className="flex items-center mb-6">
+              <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mr-4 shrink-0 shadow-sm">
+                <BrainIcon className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-slate-800">หมอรักษ์ ประจำบ้าน</h3>
+                <p className="text-slate-500 text-sm">ผู้ช่วยวิเคราะห์อาการเบื้องต้น</p>
+              </div>
           </div>
-
-          <DoctorAvatar isSpeaking={isSpeaking} />
 
           <div className="flex-grow flex flex-col space-y-4">
             <label htmlFor="symptoms" className="sr-only">พิมพ์อาการของคุณที่นี่</label>
@@ -529,48 +391,39 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
                 value={symptoms}
                 onChange={(e) => setSymptoms(e.target.value)}
                 className="block w-full h-full min-h-[180px] px-4 py-4 text-lg bg-slate-50 border-2 border-slate-200 rounded-2xl shadow-inner placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none leading-relaxed"
-                placeholder={isMonitoring ? "กำลังฟัง... พูดว่า 'สวัสดีหมอรักษ์' เพื่อเริ่มคุย" : "พิมพ์อาการตรงนี้..."}
+                placeholder="พิมพ์อาการ หรือกดไมค์เพื่อพูด..."
                 aria-label="ช่องใส่ข้อความอาการเจ็บป่วย"
               />
-            </div>
-
-            <div className="grid grid-cols-4 gap-3 h-16">
                <button
-                  onClick={toggleMonitoring}
-                  className={`col-span-1 rounded-2xl flex items-center justify-center transition-all shadow-md ${
-                    isMonitoring 
-                      ? 'bg-green-500 text-white ring-4 ring-green-200 animate-pulse' 
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-2 border-slate-200'
+                  onClick={handleMicClick}
+                  className={`absolute bottom-4 right-4 rounded-full flex items-center justify-center w-12 h-12 transition-all shadow-md ${
+                    isListening 
+                      ? 'bg-red-500 text-white ring-4 ring-red-200 animate-pulse' 
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
                   }`}
-                  aria-label={isMonitoring ? "ปิดระบบรับฟังอัตโนมัติ" : "เปิดระบบรับฟังอัตโนมัติ"}
-                  title={isMonitoring ? "แตะเพื่อปิดไมค์" : "แตะเพื่อเปิดไมค์ให้หมอรักษ์รอฟัง"}
+                  aria-label={isListening ? "หยุดพูด" : "พูดอาการ"}
+                  title={isListening ? "แตะเพื่อหยุด" : "แตะเพื่อพูด"}
                 >
-                  <MicIcon className="w-8 h-8" />
-                </button>
-
-                <button
-                  onClick={() => {
-                      if (!symptoms.trim()) {
-                          const msg = "กรุณาบอกอาการก่อนนะครับ";
-                          setError(msg);
-                          speak(msg);
-                          return;
-                      }
-                      setIsConfirmModalOpen(true);
-                  }}
-                  disabled={isLoading}
-                  className="col-span-3 bg-indigo-600 text-white text-xl font-bold rounded-2xl shadow-lg hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center disabled:bg-slate-400 disabled:cursor-not-allowed"
-                  aria-label="กดเพื่อเริ่มวิเคราะห์อาการ"
-                >
-                  {isLoading ? 'กำลังคิด...' : 'วิเคราะห์อาการ'}
+                  <MicIcon className="w-6 h-6" />
                 </button>
             </div>
-            
-            {isMonitoring && (
-                <p className="text-center text-xs text-green-600 font-medium animate-bounce">
-                    🎤 หมอรักษ์กำลังรอฟังคำว่า "สวัสดีหมอรักษ์" อยู่ครับ...
-                </p>
-            )}
+
+            <button
+                onClick={() => {
+                    if (!symptoms.trim()) {
+                        const msg = "กรุณาบอกอาการก่อนนะครับ";
+                        setError(msg);
+                        speak(msg);
+                        return;
+                    }
+                    setIsConfirmModalOpen(true);
+                }}
+                disabled={isLoading}
+                className="w-full h-16 bg-indigo-600 text-white text-xl font-bold rounded-2xl shadow-lg hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center disabled:bg-slate-400 disabled:cursor-not-allowed"
+                aria-label="กดเพื่อเริ่มวิเคราะห์อาการ"
+              >
+                {isLoading ? 'กำลังคิด...' : 'วิเคราะห์อาการ'}
+              </button>
           </div>
 
           <div aria-live="assertive" className="mt-4 min-h-[20px]">
@@ -612,16 +465,7 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
                 </div>
               </div>
               
-              {/* Check if it is just the greeting result (not an analysis) */}
-              {result.includes("PM 2.5") ? (
-                   <div className="bg-indigo-50 rounded-xl p-5 border border-indigo-100">
-                        <div className="text-slate-800 text-lg leading-relaxed">
-                            <p>{result}</p>
-                        </div>
-                   </div>
-              ) : (
-                // Full Analysis Display
-                (() => {
+                {(() => {
                     const sections = parseAnalysisResult(result);
                     return (
                         <div className="space-y-4">
@@ -662,17 +506,13 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
                             </div>
                         </div>
                     );
-                })()
-              )}
+                })()}
 
-              {/* Footer Disclaimer */}
-              {!result.includes("PM 2.5") && (
-                  <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-center">
-                    <p className="text-slate-500 text-xs">
-                        ระบบใช้ AI ในการวิเคราะห์ ข้อมูลอาจมีความคลาดเคลื่อน โปรดใช้วิจารณญาณ หากอาการไม่ดีขึ้นควรปรึกษาแพทย์
-                    </p>
-                  </div>
-              )}
+              <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-center">
+                <p className="text-slate-500 text-xs">
+                    ระบบใช้ AI ในการวิเคราะห์ ข้อมูลอาจมีความคลาดเคลื่อน โปรดใช้วิจารณญาณ หากอาการไม่ดีขึ้นควรปรึกษาแพทย์
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -692,7 +532,7 @@ export const SymptomAnalyzer: React.FC<SymptomAnalyzerProps> = ({ onAnalysisSucc
                     ยกเลิก
                 </button>
                 <button
-                    onClick={initiateAnalysis}
+                    onClick={performAnalysis}
                     className="py-4 rounded-xl bg-indigo-600 text-white font-bold text-lg shadow-lg hover:bg-indigo-700"
                 >
                     ตรวจเลย

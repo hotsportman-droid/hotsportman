@@ -1,9 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { HealthCheckCard } from './components/HealthCheckCard';
 import { BMICalculator } from './components/BMICalculator';
 import { SymptomAnalyzer } from './components/SymptomAnalyzer';
 import { NearbyHospitals } from './components/NearbyHospitals';
+import { DrRakAvatar } from './components/DrRakAvatar'; // Import the new component
 import { HEALTH_CHECKS } from './constants';
 import { StethoscopeIcon, DownloadIcon, ShareIcon, ShareIcon as ShareIconSmall } from './components/icons';
 import { ShareModal } from './components/ShareModal';
@@ -206,6 +206,11 @@ const App: React.FC = () => {
                     คู่มือตรวจเช็คสุขภาพอัจฉริยะพร้อม "หมอรักษ์" AI ที่จะช่วยวิเคราะห์และแนะนำการดูแลเบื้องต้น เพื่อความอุ่นใจของคุณและครอบครัว
                 </p>
               </div>
+          </section>
+
+          {/* New Avatar Section */}
+          <section className="mb-12 max-w-lg mx-auto">
+            <DrRakAvatar />
           </section>
 
           {/* Primary Tools Section */}
