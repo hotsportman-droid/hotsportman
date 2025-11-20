@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { HealthCheckCard } from './components/HealthCheckCard';
 import { BMICalculator } from './components/BMICalculator';
@@ -7,6 +6,7 @@ import { HEALTH_CHECKS } from './constants';
 import { StethoscopeIcon, DownloadIcon, ShareIcon, ShareIcon as ShareIconSmall } from './components/icons';
 import { ShareModal } from './components/ShareModal';
 import { Modal } from './components/Modal';
+import { DrRakAvatar } from './components/DrRakAvatar';
 
 // Simulated base count to match the 100k scenario
 const BASE_USAGE_COUNT = 102450;
@@ -205,6 +205,11 @@ const App: React.FC = () => {
                     คู่มือตรวจเช็คสุขภาพอัจฉริยะ เพื่อความอุ่นใจของคุณและครอบครัว
                 </p>
               </div>
+          </section>
+
+          {/* Dr.Rak Avatar Chat Section - The Highlight */}
+          <section className="mb-10">
+            <DrRakAvatar />
           </section>
 
           {/* Primary Tools Section */}
