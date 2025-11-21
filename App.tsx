@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HealthCheckCard } from './components/HealthCheckCard';
 import { BMICalculator } from './components/BMICalculator';
 import { NearbyHospitals } from './components/NearbyHospitals';
@@ -13,13 +13,13 @@ import { QRCodeModal } from './components/QRCodeModal';
 // Base friend count (ฐานจำนวนเพื่อนเริ่มต้น)
 const BASE_FRIEND_COUNT = 450;
 
-// Namespace: Change this to reset the counter logic cleanly
-const COUNTER_NAMESPACE = 'dr-rak-production-live-v1'; 
-const COUNTER_KEY = 'users';
+// Namespace: Update to v9 for a fresh, reliable start
+const COUNTER_NAMESPACE = 'dr-rak-health-app-v9'; 
+const COUNTER_KEY = 'friends_total';
 
 // LocalStorage Keys
-const STORAGE_KEY_VISITED = `dr_rak_is_visited_${COUNTER_NAMESPACE}`;
-const STORAGE_KEY_CACHED_COUNT = `dr_rak_cached_count_${COUNTER_NAMESPACE}`;
+const STORAGE_KEY_VISITED = `dr_rak_visited_${COUNTER_NAMESPACE}`;
+const STORAGE_KEY_CACHED_COUNT = `dr_rak_cached_${COUNTER_NAMESPACE}`;
 
 const App: React.FC = () => {
   const [openAccordion, setOpenAccordion] = React.useState<string | null>('pulse-check');
@@ -29,76 +29,73 @@ const App: React.FC = () => {
   const [isIOS, setIsIOS] = useState(false);
   
   // Initialize with cached value or Base+1 (Optimistic)
-  // We use a function to read localStorage only once on initialization
   const [totalFriends, setTotalFriends] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY_CACHED_COUNT);
     return saved ? parseInt(saved, 10) : BASE_FRIEND_COUNT + 1;
   });
-  
-  const isMounted = useRef(false);
 
   useEffect(() => {
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     setIsIOS(ios);
 
     const syncGlobalCount = async () => {
-      // Prevent double execution in React Strict Mode
-      if (isMounted.current) return;
-      isMounted.current = true;
-
-      // Check if this device has visited before
       const hasVisited = localStorage.getItem(STORAGE_KEY_VISITED);
-      
-      // Generate a random timestamp to force browser to ignore cache
-      const noCache = new Date().getTime();
+      // Use timestamp to bust browser cache effectively
+      const noCache = Date.now(); 
       
       let url = '';
       
+      // LOGIC:
+      // 1. If New User: Mark visited IMMEDIATELY (sync) to prevent double-counting in Strict Mode. Then fetch /up.
+      // 2. If Returning User: Fetch / (Read). We allow this to run every time to ensure freshness.
+
       if (!hasVisited) {
-        // --- NEW DEVICE LOGIC ---
-        // 1. Hit '/up' to tell Server: "Add +1 to the global count"
-        // 2. This SAVES the new total to the server database automatically.
+        // --- NEW DEVICE ---
+        // Optimistic lock: Mark as visited right away
+        localStorage.setItem(STORAGE_KEY_VISITED, 'true');
+        
+        console.log('New Visitor: Incrementing...');
         url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${noCache}`;
       } else {
-        // --- RETURNING DEVICE LOGIC ---
-        // 1. Hit '/' to tell Server: "Give me the latest total"
-        // 2. This reads the value that the New Device just saved.
+        // --- RETURNING DEVICE ---
+        console.log('Returning Visitor: Reading latest...');
         url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}?t=${noCache}`;
       }
 
       try {
         const response = await fetch(url, {
             method: 'GET',
-            // Critical: Force network request, never use disk cache
-            cache: 'no-store' 
+            cache: 'no-store' // Critical: Never use disk cache
         });
 
         if (response.ok) {
           const data = await response.json();
           if (typeof data.count === 'number') {
-            // Calculate Real Total: Base (450) + Server Count
             const realTotal = BASE_FRIEND_COUNT + data.count;
             
             // Update UI
             setTotalFriends(realTotal);
             
-            // Cache locally for offline support only
+            // Update Cache
             localStorage.setItem(STORAGE_KEY_CACHED_COUNT, realTotal.toString());
-            
-            // Mark as visited so next time we only Read, not Add
-            if (!hasVisited) {
-                localStorage.setItem(STORAGE_KEY_VISITED, 'true');
-                console.log("New device registered. Count incremented on server.");
-            } else {
-                console.log("Returning device. Synced latest count from server.");
-            }
+            console.log("Count Synced:", realTotal);
           }
-        } else {
-            console.warn("API response not OK", response.status);
+        } else if (response.status === 404 && hasVisited) {
+            // EDGE CASE: We think we visited, but server doesn't have the key (maybe namespace changed).
+            // Self-correct: Trigger an increment to re-initialize the counter on server.
+            console.warn("Counter missing on server (404). Re-initializing...");
+            const retryUrl = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${noCache}`;
+            const retryRes = await fetch(retryUrl, { method: 'GET', cache: 'no-store' });
+            const retryData = await retryRes.json();
+            if (retryData.count) {
+                const fixedTotal = BASE_FRIEND_COUNT + retryData.count;
+                setTotalFriends(fixedTotal);
+                localStorage.setItem(STORAGE_KEY_CACHED_COUNT, fixedTotal.toString());
+            }
         }
       } catch (error) {
-        console.error("Failed to sync count:", error);
-        // If network fails, we silently stay on the optimistic/cached value
+        console.error("Sync failed:", error);
+        // On error, we just stay with the optimistic/cached value
       }
     };
 
