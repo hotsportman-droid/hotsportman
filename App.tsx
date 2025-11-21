@@ -13,8 +13,8 @@ import { QRCodeModal } from './components/QRCodeModal';
 // Base friend count (ฐานจำนวนเพื่อนเริ่มต้น)
 const BASE_FRIEND_COUNT = 450;
 
-// Namespace: Update to v9 for a fresh, reliable start
-const COUNTER_NAMESPACE = 'dr-rak-health-app-v9'; 
+// Namespace: Update to v11 to reset and ensure clean sync without CORS issues
+const COUNTER_NAMESPACE = 'dr-rak-health-app-v11'; 
 const COUNTER_KEY = 'friends_total';
 
 // LocalStorage Keys
@@ -28,7 +28,7 @@ const App: React.FC = () => {
   const [isInstallInstructionOpen, setIsInstallInstructionOpen] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   
-  // Initialize with cached value or Base+1 (Optimistic)
+  // Initialize with cached value or Base+1
   const [totalFriends, setTotalFriends] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY_CACHED_COUNT);
     return saved ? parseInt(saved, 10) : BASE_FRIEND_COUNT + 1;
@@ -40,33 +40,31 @@ const App: React.FC = () => {
 
     const syncGlobalCount = async () => {
       const hasVisited = localStorage.getItem(STORAGE_KEY_VISITED);
-      // Use timestamp to bust browser cache effectively
-      const noCache = Date.now(); 
+      // Aggressive cache busting using only Query Params (Safe for CORS)
+      const timestamp = Date.now(); 
+      const randomNonce = Math.floor(Math.random() * 100000);
       
       let url = '';
-      
-      // LOGIC:
-      // 1. If New User: Mark visited IMMEDIATELY (sync) to prevent double-counting in Strict Mode. Then fetch /up.
-      // 2. If Returning User: Fetch / (Read). We allow this to run every time to ensure freshness.
+      let isIncrementing = false;
 
       if (!hasVisited) {
-        // --- NEW DEVICE ---
-        // Optimistic lock: Mark as visited right away
-        localStorage.setItem(STORAGE_KEY_VISITED, 'true');
-        
-        console.log('New Visitor: Incrementing...');
-        url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${noCache}`;
+        // --- NEW VISITOR ---
+        // Call /up to increment
+        console.log('Visitor Status: New. Action: Incrementing...');
+        url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${timestamp}&r=${randomNonce}`;
+        isIncrementing = true;
       } else {
-        // --- RETURNING DEVICE ---
-        console.log('Returning Visitor: Reading latest...');
-        url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}?t=${noCache}`;
+        // --- RETURNING VISITOR ---
+        // Call / to read only
+        console.log('Visitor Status: Returning. Action: Reading latest...');
+        url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}?t=${timestamp}&r=${randomNonce}`;
       }
 
       try {
-        const response = await fetch(url, {
-            method: 'GET',
-            cache: 'no-store' // Critical: Never use disk cache
-        });
+        // FIX: Removed 'headers' object. 
+        // Custom headers trigger a CORS Preflight (OPTIONS) request which fails on many free APIs.
+        // Simple GET requests with URL params are treated as "Simple Requests" and usually succeed.
+        const response = await fetch(url);
 
         if (response.ok) {
           const data = await response.json();
@@ -76,16 +74,22 @@ const App: React.FC = () => {
             // Update UI
             setTotalFriends(realTotal);
             
-            // Update Cache
+            // Update Local Cache (for next optimistic load)
             localStorage.setItem(STORAGE_KEY_CACHED_COUNT, realTotal.toString());
-            console.log("Count Synced:", realTotal);
+            
+            // CRITICAL FIX: Only mark as visited IF the server actually confirmed the increment
+            if (isIncrementing) {
+                localStorage.setItem(STORAGE_KEY_VISITED, 'true');
+                console.log("Increment Success. Marked as visited.");
+            }
+            
+            console.log("Sync Success. Total Friends:", realTotal);
           }
         } else if (response.status === 404 && hasVisited) {
-            // EDGE CASE: We think we visited, but server doesn't have the key (maybe namespace changed).
-            // Self-correct: Trigger an increment to re-initialize the counter on server.
-            console.warn("Counter missing on server (404). Re-initializing...");
-            const retryUrl = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${noCache}`;
-            const retryRes = await fetch(retryUrl, { method: 'GET', cache: 'no-store' });
+            // Fallback: If returning user finds no counter (server reset?), re-increment to fix
+            console.warn("Counter missing (404). Re-initializing...");
+            const retryUrl = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${timestamp}&retry=true`;
+            const retryRes = await fetch(retryUrl);
             const retryData = await retryRes.json();
             if (retryData.count) {
                 const fixedTotal = BASE_FRIEND_COUNT + retryData.count;
@@ -94,8 +98,8 @@ const App: React.FC = () => {
             }
         }
       } catch (error) {
-        console.error("Sync failed:", error);
-        // On error, we just stay with the optimistic/cached value
+        console.error("Sync failed (likely network/blocker):", error);
+        // No fallback state update needed, UI stays on optimistic/cached value
       }
     };
 
