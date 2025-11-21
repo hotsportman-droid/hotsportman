@@ -284,9 +284,20 @@ export const DrRakAvatar: React.FC = () => {
         };
 
         recognition.onerror = (event: any) => {
-            if (event.error !== 'no-speech') {
-                 setError(`เกิดข้อผิดพลาดในการรับเสียง: ${event.error}`);
+            // Ignore 'no-speech' and 'aborted' errors as they are not critical failures.
+            // 'aborted' is often triggered by our own logic when stopping/restarting recognition.
+            if (event.error === 'no-speech' || event.error === 'aborted') {
+                console.warn(`Speech recognition event: ${event.error}`);
+                // If the state is not a listening state, it's safe to go idle.
+                // This prevents getting stuck if the abortion was unexpected.
+                if (!['listening', 'listeningForFollowUp', 'waitingForWakeWord'].includes(interactionStateRef.current)) {
+                    setInteractionState('idle');
+                }
+                return;
             }
+
+            console.error(`Speech recognition error: ${event.error}`, event);
+            setError(`เกิดข้อผิดพลาดในการรับเสียง: ${event.error}`);
             setInteractionState('idle');
         };
 
@@ -306,9 +317,8 @@ export const DrRakAvatar: React.FC = () => {
             }
 
             if (interactionStateRef.current === 'waitingForWakeWord' && !wakeWordDetectedRef.current) {
-                 if (recognitionRef.current) {
-                    try { recognitionRef.current.start(); } catch (e) { console.error(e); }
-                }
+                 startListening('wakeWord');
+                 return;
             }
         };
 
