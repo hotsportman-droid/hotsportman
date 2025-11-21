@@ -10,17 +10,6 @@ import { Modal } from './components/Modal';
 import { DrRakAvatar } from './components/DrRakAvatar';
 import { QRCodeModal } from './components/QRCodeModal';
 
-// Base friend count (ฐานจำนวนเพื่อนเริ่มต้น)
-const BASE_FRIEND_COUNT = 450;
-
-// Namespace: Update to v12 for a completely fresh start
-const COUNTER_NAMESPACE = 'dr-rak-health-app-v12'; 
-const COUNTER_KEY = 'friends_total';
-
-// LocalStorage Keys
-const STORAGE_KEY_VISITED = `dr_rak_visited_${COUNTER_NAMESPACE}`;
-const STORAGE_KEY_CACHED_COUNT = `dr_rak_cached_${COUNTER_NAMESPACE}`;
-
 const App: React.FC = () => {
   const [openAccordion, setOpenAccordion] = React.useState<string | null>('pulse-check');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -28,86 +17,9 @@ const App: React.FC = () => {
   const [isInstallInstructionOpen, setIsInstallInstructionOpen] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   
-  // Initialize with Base + 1 (Safe default)
-  // We rely on the effect to update this to the REAL number immediately
-  const [totalFriends, setTotalFriends] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_CACHED_COUNT);
-    return saved ? parseInt(saved, 10) : BASE_FRIEND_COUNT + 1;
-  });
-
   useEffect(() => {
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     setIsIOS(ios);
-
-    const syncGlobalCount = async () => {
-      const hasVisited = localStorage.getItem(STORAGE_KEY_VISITED);
-      
-      // Aggressive cache busting
-      const timestamp = Date.now(); 
-      const randomNonce = Math.floor(Math.random() * 1000000);
-      
-      let url = '';
-      let isNewUser = false;
-
-      if (!hasVisited) {
-        // --- NEW VISITOR: Hit /up to increment ---
-        console.log('[Counter] Status: New User -> Incrementing...');
-        url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${timestamp}&r=${randomNonce}`;
-        isNewUser = true;
-      } else {
-        // --- RETURNING VISITOR: Hit / to read ---
-        console.log('[Counter] Status: Returning User -> Fetching latest...');
-        url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}?t=${timestamp}&r=${randomNonce}`;
-      }
-
-      try {
-        // FETCH WITH NO-STORE to bypass browser cache absolutely
-        const response = await fetch(url, {
-            method: 'GET',
-            cache: 'no-store', 
-            mode: 'cors'
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log('[Counter] API Response:', data);
-
-          if (typeof data.count === 'number') {
-            const realTotal = BASE_FRIEND_COUNT + data.count;
-            
-            // FORCE UPDATE STATE
-            setTotalFriends(realTotal);
-            
-            // Cache for next time (optimistic load)
-            localStorage.setItem(STORAGE_KEY_CACHED_COUNT, realTotal.toString());
-            
-            // Mark as visited only if increment succeeded
-            if (isNewUser) {
-                localStorage.setItem(STORAGE_KEY_VISITED, 'true');
-                console.log('[Counter] Marked as visited.');
-            }
-          }
-        } else if (response.status === 404) {
-            console.warn('[Counter] 404 Not Found. Namespace might be new.');
-            // Fallback: If returning user sees 404, it means counter was reset or missing.
-            // We must re-increment to initialize it.
-            if (!isNewUser) {
-                console.log('[Counter] Re-initializing counter...');
-                const retryUrl = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${timestamp}&retry=true`;
-                const retryRes = await fetch(retryUrl, { cache: 'no-store', mode: 'cors' });
-                const retryData = await retryRes.json();
-                if (retryData.count) {
-                    setTotalFriends(BASE_FRIEND_COUNT + retryData.count);
-                }
-            }
-        }
-      } catch (error) {
-        console.error('[Counter] Sync failed:', error);
-        // UI stays on cached value
-      }
-    };
-
-    syncGlobalCount();
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
@@ -117,7 +29,6 @@ const App: React.FC = () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
-
 
   const handleShare = async () => {
     const shareData = {
@@ -153,6 +64,32 @@ const App: React.FC = () => {
       check.title !== 'การวัดชีพจร' &&
       check.title !== 'การสังเกตการหายใจ'
   );
+
+  // HTML Content for the External Counter Widget
+  // Uses an iframe to safely execute document.write scripts without breaking React
+  const counterWidgetHtml = `
+    <html>
+      <head>
+        <style>
+          body { 
+            margin: 0; 
+            padding: 0; 
+            background: transparent; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            overflow: hidden;
+          }
+          img { display: block; height: 20px; }
+        </style>
+      </head>
+      <body>
+        <a href='https://www.counters-free.net/' style='display:none;'>Visitor Counters free</a> 
+        <script type='text/javascript' src='https://www.freevisitorcounters.com/auth.php?id=b8493262e998d0416d6ff20e918d4170e733f287'></script>
+        <script type="text/javascript" src="https://www.freevisitorcounters.com/en/home/counter/1445051/t/3"></script>
+      </body>
+    </html>
+  `;
 
   return (
     <>
@@ -202,8 +139,14 @@ const App: React.FC = () => {
               <div className="relative z-10 flex flex-col items-center">
                 <div className="inline-flex items-center justify-center px-4 py-1.5 mb-6 text-sm font-bold text-indigo-50 bg-white/10 backdrop-blur-md rounded-full border border-white/20 shadow-sm">
                     <span className="flex h-2.5 w-2.5 rounded-full bg-pink-400 mr-2 animate-pulse shadow-[0_0_8px_rgba(244,114,182,0.6)]"></span>
-                    {/* Display the State variable */}
-                    เพื่อนหมอรักษ์ {totalFriends.toLocaleString()} คน
+                    {/* External Counter Widget in Iframe */}
+                    <span className="mr-2">เพื่อนหมอรักษ์</span>
+                    <iframe 
+                        srcDoc={counterWidgetHtml}
+                        className="h-[20px] w-[100px] border-none overflow-hidden"
+                        title="Visitor Counter"
+                    />
+                    <span className="ml-1">คน</span>
                 </div>
                 
                 <h2 className="text-3xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6 drop-shadow-md leading-tight">
