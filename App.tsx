@@ -9,6 +9,7 @@ import { ShareModal } from './components/ShareModal';
 import { Modal } from './components/Modal';
 import { DrRakAvatar } from './components/DrRakAvatar';
 import { QRCodeModal } from './components/QRCodeModal';
+import VisitorCounter from './components/VisitorCounter';
 
 const App: React.FC = () => {
   const [openAccordion, setOpenAccordion] = React.useState<string | null>('pulse-check');
@@ -65,32 +66,6 @@ const App: React.FC = () => {
       check.title !== 'การสังเกตการหายใจ'
   );
 
-  // HTML Content for the External Counter Widget
-  // Uses an iframe to safely execute document.write scripts without breaking React
-  const counterWidgetHtml = `
-    <html>
-      <head>
-        <style>
-          body { 
-            margin: 0; 
-            padding: 0; 
-            background: transparent; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center;
-            overflow: hidden;
-          }
-          img { display: block; height: 20px; }
-        </style>
-      </head>
-      <body>
-        <a href='https://www.counters-free.net/' style='display:none;'>Visitor Counters free</a> 
-        <script type='text/javascript' src='https://www.freevisitorcounters.com/auth.php?id=b8493262e998d0416d6ff20e918d4170e733f287'></script>
-        <script type="text/javascript" src="https://www.freevisitorcounters.com/en/home/counter/1445051/t/3"></script>
-      </body>
-    </html>
-  `;
-
   return (
     <>
       <div className="min-h-screen min-h-[100dvh] bg-slate-50 text-slate-800">
@@ -139,13 +114,8 @@ const App: React.FC = () => {
               <div className="relative z-10 flex flex-col items-center">
                 <div className="inline-flex items-center justify-center px-4 py-1.5 mb-6 text-sm font-bold text-indigo-50 bg-white/10 backdrop-blur-md rounded-full border border-white/20 shadow-sm">
                     <span className="flex h-2.5 w-2.5 rounded-full bg-pink-400 mr-2 animate-pulse shadow-[0_0_8px_rgba(244,114,182,0.6)]"></span>
-                    {/* External Counter Widget in Iframe */}
                     <span className="mr-2">เพื่อนหมอรักษ์</span>
-                    <iframe 
-                        srcDoc={counterWidgetHtml}
-                        className="h-[20px] w-[100px] border-none overflow-hidden"
-                        title="Visitor Counter"
-                    />
+                    <VisitorCounter />
                     <span className="ml-1">คน</span>
                 </div>
                 
