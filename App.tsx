@@ -13,13 +13,14 @@ import { QRCodeModal } from './components/QRCodeModal';
 // --- COUNTER CONFIGURATION ---
 const BASE_FRIEND_COUNT = 450;
 // Using a final, clean namespace for the production counter
-const COUNTER_NAMESPACE = 'dr-rak-prod-final-v1';
+const COUNTER_NAMESPACE = 'dr-rak-prod-final-v2';
 const COUNTER_KEY = 'total_friends';
 const STORAGE_KEY_VISITED = `dr_rak_visited_${COUNTER_NAMESPACE}`;
 const STORAGE_KEY_CACHED_COUNT = `dr_rak_cached_${COUNTER_NAMESPACE}`;
 
 const App: React.FC = () => {
-  const [openAccordion, setOpenAccordion] = React.useState<string | null>('pulse-check');
+  // Fix: Changed React.useState to useState for consistency.
+  const [openAccordion, setOpenAccordion] = useState<string | null>('pulse-check');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
   const [isInstallInstructionOpen, setIsInstallInstructionOpen] = useState(false);
@@ -39,47 +40,49 @@ const App: React.FC = () => {
       let endpoint = '';
       let isIncrementing = false;
       
+      // 1. ตรวจสอบว่าเป็นเครื่องใหม่หรือไม่
       if (!hasVisited) {
-        // New visitor: hit the '/up' endpoint to increment the count
+        // เครื่องใหม่: เตรียมส่งคำสั่ง +1 (increment)
         endpoint = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up${cacheBuster}`;
         isIncrementing = true;
       } else {
-        // Returning visitor: hit the base endpoint to read the latest count
+        // เครื่องเก่า: เตรียมส่งคำสั่ง "ขอดูค่าล่าสุด" (read)
         endpoint = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}${cacheBuster}`;
       }
 
       try {
+        // 2. ส่งคำสั่งไปที่ Server เสมอ
         const response = await fetch(endpoint);
         if (!response.ok) {
           throw new Error(`API responded with status: ${response.status}`);
         }
         const data = await response.json();
 
+        // 3. รอ Server ตอบกลับสำเร็จแล้วค่อยทำงาน
         if (typeof data.count === 'number') {
           const latestTotal = BASE_FRIEND_COUNT + data.count;
           
-          // Update the UI with the fresh number from the server
+          // 3.1 แสดงผลค่าล่าสุดที่ได้จาก Server
           setTotalFriends(latestTotal);
           
-          // Cache the latest number locally for the next page load's fallback
+          // 3.2 บันทึกค่าล่าสุดไว้เผื่อเน็ตหลุดครั้งหน้า (Fallback Cache)
           localStorage.setItem(STORAGE_KEY_CACHED_COUNT, latestTotal.toString());
           
-          // If this was a successful increment operation, mark this browser as "visited"
+          // 3.3 (สำคัญ) ถ้าเป็นการบวกเลขสำเร็จ ค่อยบันทึกว่า "เครื่องนี้นับแล้ว"
           if (isIncrementing) {
             localStorage.setItem(STORAGE_KEY_VISITED, 'true');
           }
         } else {
-          // Throw error if API response format is unexpected
           throw new Error("Invalid data format from API");
         }
       } catch (error) {
         console.error("Counter sync failed:", error);
-        // GRACEFUL FALLBACK: If API fails, use the last known good value from cache.
+        // กรณีฉุกเฉิน: ถ้า Server ล่ม/เน็ตหลุด ให้ดึงค่าล่าสุดที่เคยจำไว้มาแสดงก่อน
         const cachedCount = localStorage.getItem(STORAGE_KEY_CACHED_COUNT);
         if (cachedCount) {
           setTotalFriends(parseInt(cachedCount, 10));
         } else {
-          // Absolute worst case: no cache and no API, show base count.
+          // ถ้าไม่มีค่าในเครื่องเลย ให้แสดงค่าเริ่มต้น
           setTotalFriends(BASE_FRIEND_COUNT);
         }
       }
