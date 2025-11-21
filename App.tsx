@@ -9,7 +9,14 @@ import { ShareModal } from './components/ShareModal';
 import { Modal } from './components/Modal';
 import { DrRakAvatar } from './components/DrRakAvatar';
 import { QRCodeModal } from './components/QRCodeModal';
-import VisitorCounter from './components/VisitorCounter';
+
+// --- COUNTER CONFIGURATION ---
+const BASE_FRIEND_COUNT = 450;
+// Using a final, clean namespace for the production counter
+const COUNTER_NAMESPACE = 'dr-rak-prod-final-v1';
+const COUNTER_KEY = 'total_friends';
+const STORAGE_KEY_VISITED = `dr_rak_visited_${COUNTER_NAMESPACE}`;
+const STORAGE_KEY_CACHED_COUNT = `dr_rak_cached_${COUNTER_NAMESPACE}`;
 
 const App: React.FC = () => {
   const [openAccordion, setOpenAccordion] = React.useState<string | null>('pulse-check');
@@ -18,9 +25,67 @@ const App: React.FC = () => {
   const [isInstallInstructionOpen, setIsInstallInstructionOpen] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   
+  // Initialize state to null to represent a "loading" state
+  const [totalFriends, setTotalFriends] = useState<number | null>(null);
+  
   useEffect(() => {
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     setIsIOS(ios);
+
+    const syncCounter = async () => {
+      const hasVisited = localStorage.getItem(STORAGE_KEY_VISITED);
+      const cacheBuster = `?_=${Date.now()}`; // Force fresh request
+      
+      let endpoint = '';
+      let isIncrementing = false;
+      
+      if (!hasVisited) {
+        // New visitor: hit the '/up' endpoint to increment the count
+        endpoint = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up${cacheBuster}`;
+        isIncrementing = true;
+      } else {
+        // Returning visitor: hit the base endpoint to read the latest count
+        endpoint = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}${cacheBuster}`;
+      }
+
+      try {
+        const response = await fetch(endpoint);
+        if (!response.ok) {
+          throw new Error(`API responded with status: ${response.status}`);
+        }
+        const data = await response.json();
+
+        if (typeof data.count === 'number') {
+          const latestTotal = BASE_FRIEND_COUNT + data.count;
+          
+          // Update the UI with the fresh number from the server
+          setTotalFriends(latestTotal);
+          
+          // Cache the latest number locally for the next page load's fallback
+          localStorage.setItem(STORAGE_KEY_CACHED_COUNT, latestTotal.toString());
+          
+          // If this was a successful increment operation, mark this browser as "visited"
+          if (isIncrementing) {
+            localStorage.setItem(STORAGE_KEY_VISITED, 'true');
+          }
+        } else {
+          // Throw error if API response format is unexpected
+          throw new Error("Invalid data format from API");
+        }
+      } catch (error) {
+        console.error("Counter sync failed:", error);
+        // GRACEFUL FALLBACK: If API fails, use the last known good value from cache.
+        const cachedCount = localStorage.getItem(STORAGE_KEY_CACHED_COUNT);
+        if (cachedCount) {
+          setTotalFriends(parseInt(cachedCount, 10));
+        } else {
+          // Absolute worst case: no cache and no API, show base count.
+          setTotalFriends(BASE_FRIEND_COUNT);
+        }
+      }
+    };
+
+    syncCounter();
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
@@ -109,13 +174,17 @@ const App: React.FC = () => {
               {/* Decorative Background Elements */}
               <div className="absolute top-0 left-0 -translate-x-1/4 -translate-y-1/4 w-96 h-96 bg-white opacity-10 rounded-full blur-3xl pointer-events-none"></div>
               <div className="absolute bottom-0 right-0 translate-x-1/4 translate-y-1/4 w-96 h-96 bg-teal-400 opacity-20 rounded-full blur-3xl pointer-events-none"></div>
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4xKSIvPjwvc3ZnPg==')] [mask-image:radial-gradient(black,transparent_70%)] pointer-events-none"></div>
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbGSPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4xKSIvPjwvc3ZnPg==')] [mask-image:radial-gradient(black,transparent_70%)] pointer-events-none"></div>
 
               <div className="relative z-10 flex flex-col items-center">
                 <div className="inline-flex items-center justify-center px-4 py-1.5 mb-6 text-sm font-bold text-indigo-50 bg-white/10 backdrop-blur-md rounded-full border border-white/20 shadow-sm">
-                    <span className="flex h-2.5 w-2.5 rounded-full bg-pink-400 mr-2 animate-pulse shadow-[0_0_8px_rgba(244,114,182,0.6)]"></span>
+                    <span className="flex h-2.5 w-2.5 rounded-full bg-pink-400 mr-2 animate-pulse shadow-[0_0_8px_rgba(44,114,182,0.6)]"></span>
                     <span className="mr-2">เพื่อนหมอรักษ์</span>
-                    <VisitorCounter />
+                    {totalFriends === null ? (
+                      <span className="w-12 inline-block text-left animate-pulse">...</span>
+                    ) : (
+                      <span>{totalFriends.toLocaleString()}</span>
+                    )}
                     <span className="ml-1">คน</span>
                 </div>
                 
