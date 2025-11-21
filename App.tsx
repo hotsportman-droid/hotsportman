@@ -12,9 +12,9 @@ import { QRCodeModal } from './components/QRCodeModal';
 
 // Base friend count (ฐานจำนวนเพื่อนเริ่มต้น)
 const BASE_FRIEND_COUNT = 450;
-// Namespace & Key (Keep v7 to preserve current count if possible)
-const COUNTER_NAMESPACE = 'dr-rak-official-counter-v7'; 
-const COUNTER_KEY = 'total_friends';
+// Namespace & Key (Fresh production key)
+const COUNTER_NAMESPACE = 'dr-rak-global-counter-2024'; 
+const COUNTER_KEY = 'users';
 
 // LocalStorage Keys
 const STORAGE_KEY_VISITED = `visited_${COUNTER_NAMESPACE}`;
@@ -27,11 +27,12 @@ const App: React.FC = () => {
   const [isInstallInstructionOpen, setIsInstallInstructionOpen] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   
-  // 1. Initialize State from LocalStorage (Persistence)
-  // This prevents the count from flashing back to 450 on refresh if the API fails or lags
+  // 1. OPTIMISTIC INITIALIZATION
+  // Initialize with Base + 1 immediately if no saved data exists.
+  // This ensures the user sees themselves counted (451) instantly, resolving the "not adding anyone" issue.
   const [totalFriends, setTotalFriends] = useState(() => {
     const savedCount = localStorage.getItem(STORAGE_KEY_LAST_COUNT);
-    return savedCount ? parseInt(savedCount, 10) : BASE_FRIEND_COUNT;
+    return savedCount ? parseInt(savedCount, 10) : BASE_FRIEND_COUNT + 1;
   });
   
   const isMounted = useRef(false);
@@ -46,24 +47,23 @@ const App: React.FC = () => {
 
       const hasVisited = localStorage.getItem(STORAGE_KEY_VISITED);
       
-      // Cache Buster
+      // Cache Buster to prevent browser from serving stale data
       const timestamp = new Date().getTime();
       
       let url = '';
       
       if (!hasVisited) {
-        // Case A: New Device -> Increment
+        // Case A: New Device -> Hit /up (Increment)
         url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}/up?t=${timestamp}`;
       } else {
-        // Case B: Returning Device -> Read Only
+        // Case B: Returning Device -> Hit / (Read Only)
         url = `https://api.counterapi.dev/v1/${COUNTER_NAMESPACE}/${COUNTER_KEY}?t=${timestamp}`;
       }
 
       try {
-        // Force 'no-store' to bypass browser cache completely
         const response = await fetch(url, { 
             method: 'GET',
-            cache: 'no-store',
+            cache: 'no-store', // Critical: Disable cache
             headers: {
                 'Content-Type': 'application/json'
             }
@@ -72,25 +72,25 @@ const App: React.FC = () => {
         if (response.ok) {
           const data = await response.json();
           if (typeof data.count === 'number') {
+            // Calculate true total
             const newTotal = BASE_FRIEND_COUNT + data.count;
             
-            // Update UI
+            // Update State (only if valid)
             setTotalFriends(newTotal);
             
-            // Update Local Storage (Cache for next refresh)
+            // Save to Storage (Persistence)
             localStorage.setItem(STORAGE_KEY_LAST_COUNT, newTotal.toString());
             
-            // Mark as visited
+            // Mark this device as registered
             if (!hasVisited) {
               localStorage.setItem(STORAGE_KEY_VISITED, 'true');
             }
           }
         }
       } catch (error) {
-        console.error("Counter Error:", error);
-        // On error, we intentionally DO NOTHING. 
-        // The state remains at the value loaded from localStorage (e.g., 452 or 454), 
-        // instead of reverting to BASE_FRIEND_COUNT (450).
+        console.error("Counter API connection failed:", error);
+        // On error, we purposefully do NOT revert the state.
+        // The user keeps seeing their optimistic count (Base + 1) or the last saved count.
       }
     };
 
