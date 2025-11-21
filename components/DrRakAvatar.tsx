@@ -6,7 +6,6 @@ import { DrRakSvgAvatar } from './DrRakSvgAvatar';
 
 // --- Types ---
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-// Simplified states: removed waitingForWakeWord and confirmation steps for snappier experience
 type InteractionState = 'idle' | 'listening' | 'analyzing' | 'speaking';
 
 interface Analysis {
@@ -39,6 +38,7 @@ export const DrRakAvatar: React.FC = () => {
   const [statusText, setStatusText] = useState('กดปุ่มไมค์เพื่อเริ่มบอกอาการ...');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<number | null>(null);
@@ -53,6 +53,25 @@ export const DrRakAvatar: React.FC = () => {
     symptomsRef.current = symptoms;
     isMutedRef.current = isMuted;
   }, [interactionState, symptoms, isMuted]);
+
+  // Initialize Speech Synthesis Voices
+  useEffect(() => {
+    const loadVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      setVoices(availableVoices);
+    };
+    
+    if (window.speechSynthesis) {
+        loadVoices();
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+    
+    return () => {
+         if (window.speechSynthesis) {
+            window.speechSynthesis.onvoiceschanged = null;
+         }
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -74,7 +93,6 @@ export const DrRakAvatar: React.FC = () => {
     recognitionRef.current = recognition;
 
     recognition.onresult = (event: any) => {
-      // Only process results if we are actively listening for symptoms
       if (stateRef.current !== 'listening') return;
 
       if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
@@ -94,8 +112,6 @@ export const DrRakAvatar: React.FC = () => {
         setSymptoms(prev => (prev + ' ' + finalTranscript).trim());
       }
 
-      // Visual feedback for interim results could go here if we had a separate UI state for it
-      // For now, status text update is enough
       setStatusText(interimTranscript ? 'กำลังฟัง: ' + interimTranscript : 'กำลังฟัง...');
 
       // Auto-submit after silence
@@ -103,33 +119,27 @@ export const DrRakAvatar: React.FC = () => {
         if (symptomsRef.current.trim().length > 0) {
             handleAnalysis();
         }
-      }, 2000); // 2 seconds of silence triggers analysis
+      }, 2000);
     };
     
     recognition.onend = () => {
         if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
         const currentState = stateRef.current;
         
-        console.log("Recognition ended. Current state:", currentState);
-
         // If recognition stops unexpectedly while listening, check if we have input
         if (currentState === 'listening') {
             if (symptomsRef.current.trim().length > 0) {
-                // If we have text, assume user finished
                 handleAnalysis();
             } else {
-                // If no text, just reset to idle
                 updateStateAndStatus('idle', 'กดปุ่มไมค์เพื่อเริ่มบอกอาการ...');
             }
         }
     };
 
     recognition.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
         if (event.error !== 'aborted' && event.error !== 'no-speech') {
             if (stateRef.current === 'listening') {
                  updateStateAndStatus('idle', 'เกิดข้อผิดพลาดในการรับเสียง');
-                 speak("ขออภัยค่ะ มีปัญหาในการรับสัญญาณเสียง กรุณาลองอีกครั้งนะคะ");
             }
         }
     };
@@ -167,9 +177,10 @@ export const DrRakAvatar: React.FC = () => {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'th-TH';
     
-    const voices = window.speechSynthesis.getVoices();
-    // Try to find a good Thai voice
-    const thaiVoice = voices.find(v => v.lang === 'th-TH' && (v.name.includes('Kanya') || v.name.includes('Narisa')));
+    // Robust voice selection
+    const thaiVoice = voices.find(v => v.lang.includes('th')) || 
+                      voices.find(v => v.lang.includes('TH'));
+    
     if (thaiVoice) {
       utterance.voice = thaiVoice;
     }
@@ -186,8 +197,8 @@ export const DrRakAvatar: React.FC = () => {
     };
 
     utterance.onend = handleEnd;
-    utterance.onerror = (event) => {
-        console.error('Speech synthesis error:', event);
+    utterance.onerror = (e) => {
+        console.error("TTS Error:", e);
         handleEnd();
     };
     
@@ -218,15 +229,12 @@ export const DrRakAvatar: React.FC = () => {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (e) {
-        // ignore stop errors
-      }
+      } catch (e) {}
     }
   };
 
   const handleMicClick = async () => {
     if (interactionState === 'idle') {
-        // Start flow
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             stream.getTracks().forEach(track => track.stop());
@@ -236,12 +244,15 @@ export const DrRakAvatar: React.FC = () => {
             setStatusText('กรุณาอนุญาตให้ใช้ไมโครโฟนค่ะ');
         }
     } else {
-        // Stop flow manually
         stopListening();
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         window.speechSynthesis.cancel();
         updateStateAndStatus('idle', 'กดปุ่มไมค์เพื่อเริ่มบอกอาการ...');
     }
+  };
+
+  const constructResponseText = (result: Analysis) => {
+      return `จากอาการที่เล่ามานะคะ ${result.assessment} เบื้องต้นขอแนะนำให้ ${result.recommendation} ${result.warning !== 'ไม่มีสัญญาณอันตรายร้ายแรง แต่ควรสังเกตอาการอย่างใกล้ชิด' ? `ข้อควรระวังคือ ${result.warning}` : ''} อย่างไรก็ตาม นี่เป็นเพียงคำแนะนำเบื้องต้น ควรปรึกษาแพทย์เพื่อรับการวินิจฉัยที่ถูกต้องนะคะ`;
   };
 
   const handleAnalysis = async () => {
@@ -258,45 +269,33 @@ export const DrRakAvatar: React.FC = () => {
 
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      console.error("Gemini API key is not configured.");
       updateStateAndStatus('idle', 'เกิดข้อผิดพลาดในการตั้งค่าระบบ');
-      speak("ขออภัยค่ะ ไม่สามารถเชื่อมต่อระบบวิเคราะห์ได้ในขณะนี้");
       setIsLoading(false);
       return;
     }
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
-      คุณคือ "หมอรักษ์" ผู้ช่วย AI ด้านสุขภาพที่เป็นมิตรและห่วงใย
-      - ห้ามวินิจฉัยโรคเด็ดขาด ย้ำว่าห้ามเด็ดขาด
-      - ให้คำแนะนำเบื้องต้นตามอาการที่ผู้ใช้เล่ามาเท่านั้น
-      - เน้นย้ำเสมอว่านี่เป็นเพียงคำแนะนำเบื้องต้นและควรปรึกษาแพทย์เพื่อการวินิจฉัยที่ถูกต้อง
-      - ตอบกลับเป็น JSON object เท่านั้น ตามโครงสร้างนี้:
+      คุณคือ "หมอรักษ์" ผู้ช่วย AI ด้านสุขภาพที่เป็นมิตร
+      - ห้ามวินิจฉัยโรคเด็ดขาด
+      - ให้คำแนะนำเบื้องต้นสั้นๆ กระชับ เข้าใจง่าย เหมาะสำหรับการพูด
+      - ตอบกลับเป็น JSON object เท่านั้น:
       {
-        "assessment": "สรุปความเป็นไปได้ของอาการตามที่ผู้ใช้เล่ามา สรุปสั้นๆ แต่ให้ครอบคลุม",
-        "recommendation": "คำแนะนำในการดูแลตัวเองเบื้องต้นที่สามารถทำได้ และควรทำอะไรต่อไป",
-        "warning": "คำเตือนที่สำคัญ หรือสัญญาณอันตรายที่ควรไปพบแพทย์ทันที หากไม่มี ให้ระบุว่า 'ไม่มีสัญญาณอันตรายร้ายแรง แต่ควรสังเกตอาการอย่างใกล้ชิด'"
+        "assessment": "สรุปความเป็นไปได้ของอาการ (สั้นๆ)",
+        "recommendation": "คำแนะนำในการดูแลตัวเอง (กระชับ)",
+        "warning": "สัญญาณอันตรายที่ควรพบแพทย์ (ถ้ามี)"
       }
-
-      อาการที่ผู้ใช้แจ้ง: "${symptomsRef.current}"
+      อาการ: "${symptomsRef.current}"
     `;
 
     try {
       const result = await ai.models.generateContent({
         model,
         contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          safetySettings,
-        },
+        config: { responseMimeType: 'application/json', safetySettings },
       });
-      const responseText = result.text;
       
-      if (!responseText) {
-        throw new Error('API returned an empty response.');
-      }
-      
-      const cleanedJsonString = responseText.replace(/```json|```/g, '').trim();
+      const cleanedJsonString = result.text?.replace(/```json|```/g, '').trim() || '{}';
       const parsedResult: Analysis = JSON.parse(cleanedJsonString);
       setAnalysisResult(parsedResult);
       
@@ -308,14 +307,10 @@ export const DrRakAvatar: React.FC = () => {
       };
       saveHistory(newHistoryItem);
 
-      const responseToSpeak = `
-        จากอาการที่เล่ามานะคะ ${parsedResult.assessment} 
-        เบื้องต้นขอแนะนำให้ ${parsedResult.recommendation} 
-        ${parsedResult.warning !== 'ไม่มีสัญญาณอันตรายร้ายแรง แต่ควรสังเกตอาการอย่างใกล้ชิด' ? `ข้อควรระวังคือ ${parsedResult.warning}` : ''}
-        อย่างไรก็ตาม นี่เป็นเพียงคำแนะนำเบื้องต้น ควรปรึกษาแพทย์เพื่อรับการวินิจฉัยที่ถูกต้องนะคะ
-      `;
+      const responseToSpeak = constructResponseText(parsedResult);
       
-      updateStateAndStatus('speaking', 'กำลังแจ้งผลการวิเคราะห์...');
+      updateStateAndStatus('speaking', 'หมอรักษ์กำลังพูด...');
+      // Speak immediately after analysis is ready
       speak(responseToSpeak, () => {
         updateStateAndStatus('idle', 'ปรึกษาอีกครั้ง กดปุ่มไมค์ได้เลยค่ะ');
       });
@@ -323,7 +318,6 @@ export const DrRakAvatar: React.FC = () => {
     } catch (error) {
       console.error('Error analyzing symptoms:', error);
       updateStateAndStatus('idle', 'เกิดข้อผิดพลาดในการวิเคราะห์');
-      speak("ขออภัยค่ะ เกิดข้อผิดพลาดในการวิเคราะห์อาการ กรุณาลองใหม่อีกครั้งนะคะ");
     } finally {
       setIsLoading(false);
     }
@@ -401,6 +395,14 @@ export const DrRakAvatar: React.FC = () => {
           {isLoading && <div className="text-center text-slate-600">กำลังวิเคราะห์...</div>}
           {analysisResult && !isLoading && (
             <div className="space-y-4 text-sm">
+                 <div className="flex justify-end">
+                    <button 
+                        onClick={() => speak(constructResponseText(analysisResult))}
+                        className="text-indigo-600 hover:text-indigo-800 text-xs font-semibold flex items-center gap-1"
+                    >
+                        <SpeakerWaveIcon className="w-4 h-4" /> ฟังเสียงอีกครั้ง
+                    </button>
+                 </div>
                 <div>
                     <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><CheckCircleIcon className="w-5 h-5 text-green-500"/> การประเมินเบื้องต้น</h4>
                     <p className="text-slate-600 pl-7">{analysisResult.assessment}</p>
