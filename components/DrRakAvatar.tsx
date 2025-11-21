@@ -252,7 +252,7 @@ export const DrRakAvatar: React.FC = () => {
   };
 
   const constructResponseText = (result: Analysis) => {
-      return `จากอาการที่เล่ามานะคะ ${result.assessment} เบื้องต้นขอแนะนำให้ ${result.recommendation} ${result.warning !== 'ไม่มีสัญญาณอันตรายร้ายแรง แต่ควรสังเกตอาการอย่างใกล้ชิด' ? `ข้อควรระวังคือ ${result.warning}` : ''} อย่างไรก็ตาม นี่เป็นเพียงคำแนะนำเบื้องต้น ควรปรึกษาแพทย์เพื่อรับการวินิจฉัยที่ถูกต้องนะคะ`;
+      return `จากการวิเคราะห์อาการนะคะ ${result.assessment} หมอขอแนะนำวิธีการดูแลตัวเองเบื้องต้นดังนี้ค่ะ ${result.recommendation} สิ่งที่ต้องระวังเป็นพิเศษคือ ${result.warning} หากอาการไม่ดีขึ้น แนะนำให้ไปพบแพทย์นะคะ`;
   };
 
   const handleAnalysis = async () => {
@@ -276,14 +276,15 @@ export const DrRakAvatar: React.FC = () => {
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
-      คุณคือ "หมอรักษ์" ผู้ช่วย AI ด้านสุขภาพที่เป็นมิตร
-      - ห้ามวินิจฉัยโรคเด็ดขาด
-      - ให้คำแนะนำเบื้องต้นสั้นๆ กระชับ เข้าใจง่าย เหมาะสำหรับการพูด
-      - ตอบกลับเป็น JSON object เท่านั้น:
+      คุณคือ "หมอรักษ์" ผู้ช่วย AI ด้านสุขภาพที่มีความเชี่ยวชาญและเป็นกันเอง
+      - ห้ามวินิจฉัยโรคเด็ดขาด ให้ระบุเป็นแนวโน้มหรือสาเหตุที่เป็นไปได้
+      - ให้คำแนะนำการดูแลตัวเองที่บ้านอย่างละเอียด เป็นขั้นตอน (Step-by-step) และปฏิบัติได้จริง
+      - อธิบายด้วยภาษาที่เข้าใจง่าย อ่อนโยน เหมือนคุยกับคุณหมอใจดี
+      - ตอบกลับเป็น JSON object เท่านั้น โดยไม่มี Markdown code block:
       {
-        "assessment": "สรุปความเป็นไปได้ของอาการ (สั้นๆ)",
-        "recommendation": "คำแนะนำในการดูแลตัวเอง (กระชับ)",
-        "warning": "สัญญาณอันตรายที่ควรพบแพทย์ (ถ้ามี)"
+        "assessment": "วิเคราะห์สาเหตุที่เป็นไปได้ของอาการอย่างละเอียด",
+        "recommendation": "คำแนะนำการดูแลตัวเองอย่างละเอียด เป็นข้อๆ",
+        "warning": "สัญญาณเตือนที่ควรไปพบแพทย์ทันที"
       }
       อาการ: "${symptomsRef.current}"
     `;
@@ -405,15 +406,15 @@ export const DrRakAvatar: React.FC = () => {
                  </div>
                 <div>
                     <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><CheckCircleIcon className="w-5 h-5 text-green-500"/> การประเมินเบื้องต้น</h4>
-                    <p className="text-slate-600 pl-7">{analysisResult.assessment}</p>
+                    <p className="text-slate-600 pl-7 whitespace-pre-line">{analysisResult.assessment}</p>
                 </div>
                  <div>
                     <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><StethoscopeIcon className="w-5 h-5 text-blue-500"/> คำแนะนำ</h4>
-                    <p className="text-slate-600 pl-7">{analysisResult.recommendation}</p>
+                    <p className="text-slate-600 pl-7 whitespace-pre-line">{analysisResult.recommendation}</p>
                 </div>
                  <div>
                     <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><ExclamationIcon className="w-5 h-5 text-red-500"/> ข้อควรระวัง</h4>
-                    <p className="text-slate-600 pl-7">{analysisResult.warning}</p>
+                    <p className="text-slate-600 pl-7 whitespace-pre-line">{analysisResult.warning}</p>
                 </div>
                 {showHospitalButton && (
                     <div className="pt-4 text-center">
