@@ -6,7 +6,8 @@ import { DrRakSvgAvatar } from './DrRakSvgAvatar';
 
 // --- Types ---
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-type InteractionState = 'idle' | 'waitingForWakeWord' | 'listeningPrimary' | 'askingConfirmation' | 'listeningConfirmation' | 'analyzing' | 'speaking';
+// Simplified states: removed waitingForWakeWord and confirmation steps for snappier experience
+type InteractionState = 'idle' | 'listening' | 'analyzing' | 'speaking';
 
 interface Analysis {
   assessment: string;
@@ -73,10 +74,14 @@ export const DrRakAvatar: React.FC = () => {
     recognitionRef.current = recognition;
 
     recognition.onresult = (event: any) => {
+      // Only process results if we are actively listening for symptoms
+      if (stateRef.current !== 'listening') return;
+
       if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
 
-      let interimTranscript = '';
       let finalTranscript = '';
+      let interimTranscript = '';
+
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
           finalTranscript += event.results[i][0].transcript;
@@ -85,37 +90,20 @@ export const DrRakAvatar: React.FC = () => {
         }
       }
 
-      const currentState = stateRef.current;
-      
-      // Combine checks to be more responsive
-      const textToCheck = finalTranscript + interimTranscript;
-
-      if (currentState === 'waitingForWakeWord') {
-        // Check for "หมอ" in either final or interim results to be snappy
-        if (textToCheck.includes('หมอ')) {
-          // CRITICAL: Update state ref immediately to prevent onend loop from restarting recognition
-          stateRef.current = 'speaking'; 
-          setInteractionState('speaking');
-          
-          stopListening();
-          speak("สวัสดีค่ะ ได้ยินแล้วค่ะ เล่าอาการให้หมอฟังได้เลยนะคะ", () => {
-            setSymptoms('');
-            setAnalysisResult(null);
-            updateStateAndStatus('listeningPrimary', 'กำลังฟัง... เล่าอาการได้เลยค่ะ');
-            startListening('listeningPrimary');
-          });
-        }
-      } else if (currentState === 'listeningPrimary' || currentState === 'listeningConfirmation') {
-        // Only append final transcripts to symptoms to avoid duplication
-        if (finalTranscript) {
-            setSymptoms(prev => (prev + ' ' + finalTranscript).trim());
-        }
-        setStatusText('กำลังฟัง...');
-
-        silenceTimerRef.current = window.setTimeout(() => {
-          stopListening();
-        }, 2500); // 2.5 seconds of silence
+      if (finalTranscript) {
+        setSymptoms(prev => (prev + ' ' + finalTranscript).trim());
       }
+
+      // Visual feedback for interim results could go here if we had a separate UI state for it
+      // For now, status text update is enough
+      setStatusText(interimTranscript ? 'กำลังฟัง: ' + interimTranscript : 'กำลังฟัง...');
+
+      // Auto-submit after silence
+      silenceTimerRef.current = window.setTimeout(() => {
+        if (symptomsRef.current.trim().length > 0) {
+            handleAnalysis();
+        }
+      }, 2000); // 2 seconds of silence triggers analysis
     };
     
     recognition.onend = () => {
@@ -124,34 +112,22 @@ export const DrRakAvatar: React.FC = () => {
         
         console.log("Recognition ended. Current state:", currentState);
 
-        if (currentState === 'waitingForWakeWord') {
-            // Restart immediately if we are still waiting for wake word (keep alive)
-            try {
-                recognition.start();
-            } catch (e) {
-                // Ignore already started errors
-            }
-        } else if (currentState === 'listeningPrimary') {
-            if(symptomsRef.current.trim().length > 0) {
-              updateStateAndStatus('askingConfirmation', 'มีอาการอื่นเพิ่มเติมอีกไหมคะ...');
-              speak("มีอาการอื่นเพิ่มเติมอีกไหมคะ", () => {
-                updateStateAndStatus('listeningConfirmation', 'กำลังฟังคำตอบ...');
-                startListening('listeningConfirmation');
-              });
+        // If recognition stops unexpectedly while listening, check if we have input
+        if (currentState === 'listening') {
+            if (symptomsRef.current.trim().length > 0) {
+                // If we have text, assume user finished
+                handleAnalysis();
             } else {
-               updateStateAndStatus('idle', 'กดปุ่มไมค์เพื่อเริ่มบอกอาการ...');
+                // If no text, just reset to idle
+                updateStateAndStatus('idle', 'กดปุ่มไมค์เพื่อเริ่มบอกอาการ...');
             }
-        } else if (currentState === 'listeningConfirmation') {
-            handleAnalysis();
         }
-        // If state is 'speaking' or 'analyzing', do nothing (let them finish)
     };
 
     recognition.onerror = (event: any) => {
         console.error('Speech recognition error:', event.error);
         if (event.error !== 'aborted' && event.error !== 'no-speech') {
-            // Only reset to idle on genuine errors
-            if (stateRef.current !== 'waitingForWakeWord') {
+            if (stateRef.current === 'listening') {
                  updateStateAndStatus('idle', 'เกิดข้อผิดพลาดในการรับเสียง');
                  speak("ขออภัยค่ะ มีปัญหาในการรับสัญญาณเสียง กรุณาลองอีกครั้งนะคะ");
             }
@@ -170,7 +146,7 @@ export const DrRakAvatar: React.FC = () => {
   }, []);
 
   const updateStateAndStatus = (state: InteractionState, text: string) => {
-    stateRef.current = state; // Update ref immediately for sync checks
+    stateRef.current = state;
     setInteractionState(state);
     setStatusText(text);
   };
@@ -178,7 +154,6 @@ export const DrRakAvatar: React.FC = () => {
   const speak = (text: string, onEndCallback: () => void = () => {}) => {
     if (isMutedRef.current) {
       console.log("[Muted] Dr. Rak would say:", text);
-      // Small delay to simulate speaking time
       setTimeout(onEndCallback, 1500);
       return;
     }
@@ -193,15 +168,15 @@ export const DrRakAvatar: React.FC = () => {
     utterance.lang = 'th-TH';
     
     const voices = window.speechSynthesis.getVoices();
-    const thaiVoice = voices.find(v => v.lang === 'th-TH' && v.name.includes('Kanya'));
+    // Try to find a good Thai voice
+    const thaiVoice = voices.find(v => v.lang === 'th-TH' && (v.name.includes('Kanya') || v.name.includes('Narisa')));
     if (thaiVoice) {
       utterance.voice = thaiVoice;
     }
     
-    utterance.rate = 0.95;
+    utterance.rate = 1.0;
     utterance.pitch = 1.0;
 
-    // Robust callback handling
     let callbackCalled = false;
     const handleEnd = () => {
         if (!callbackCalled) {
@@ -216,19 +191,17 @@ export const DrRakAvatar: React.FC = () => {
         handleEnd();
     };
     
-    // Small timeout to ensure previous speech is cancelled and state is settled
     window.setTimeout(() => window.speechSynthesis.speak(utterance), 50);
   };
 
-  const startListening = (mode: InteractionState) => {
+  const startListening = () => {
     if (recognitionRef.current) {
       try {
-        // Stop any existing instance first to be clean
-        recognitionRef.current.stop(); 
-        
-        // Small delay to allow stop to process
+        recognitionRef.current.stop();
         setTimeout(() => {
-             updateStateAndStatus(mode, mode === 'waitingForWakeWord' ? "พร้อมรับฟัง... กรุณาเรียก 'หมอ' เพื่อเริ่มสนทนาค่ะ" : statusText);
+             updateStateAndStatus('listening', 'กำลังฟัง... เล่าอาการได้เลยค่ะ');
+             setSymptoms('');
+             setAnalysisResult(null);
              try {
                 recognitionRef.current.start();
              } catch(e) {
@@ -243,45 +216,43 @@ export const DrRakAvatar: React.FC = () => {
 
   const stopListening = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // ignore stop errors
+      }
     }
   };
 
   const handleMicClick = async () => {
-    if (interactionState !== 'idle') {
-      stopListening();
-      window.speechSynthesis.cancel();
-      updateStateAndStatus('idle', 'กดปุ่มไมค์เพื่อเริ่มบอกอาการ...');
-      return;
-    }
-    
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
-        setAnalysisResult(null);
-        setSymptoms('');
-        // Explicitly start in waiting mode
-        updateStateAndStatus('waitingForWakeWord', "พร้อมรับฟัง... กรุณาเรียก 'หมอ' เพื่อเริ่มสนทนาค่ะ");
-        
-        if (recognitionRef.current) {
-            try {
-                 recognitionRef.current.start();
-            } catch(e) {
-                // If already started, just let it be
-                console.log("Recognition likely already active");
-            }
+    if (interactionState === 'idle') {
+        // Start flow
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(track => track.stop());
+            startListening();
+        } catch (err) {
+            console.error('Microphone permission denied:', err);
+            setStatusText('กรุณาอนุญาตให้ใช้ไมโครโฟนค่ะ');
         }
-    } catch (err) {
-        console.error('Microphone permission denied:', err);
-        setStatusText('กรุณาอนุญาตให้ใช้ไมโครโฟนค่ะ');
+    } else {
+        // Stop flow manually
+        stopListening();
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        window.speechSynthesis.cancel();
+        updateStateAndStatus('idle', 'กดปุ่มไมค์เพื่อเริ่มบอกอาการ...');
     }
   };
 
   const handleAnalysis = async () => {
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    stopListening();
+
     if (!symptomsRef.current.trim()) {
         updateStateAndStatus('idle', 'ไม่ได้ระบุอาการ โปรดลองอีกครั้ง');
         return;
     }
+    
     updateStateAndStatus('analyzing', 'กำลังวิเคราะห์อาการ... กรุณารอสักครู่ค่ะ');
     setIsLoading(true);
 
@@ -343,6 +314,7 @@ export const DrRakAvatar: React.FC = () => {
         ${parsedResult.warning !== 'ไม่มีสัญญาณอันตรายร้ายแรง แต่ควรสังเกตอาการอย่างใกล้ชิด' ? `ข้อควรระวังคือ ${parsedResult.warning}` : ''}
         อย่างไรก็ตาม นี่เป็นเพียงคำแนะนำเบื้องต้น ควรปรึกษาแพทย์เพื่อรับการวินิจฉัยที่ถูกต้องนะคะ
       `;
+      
       updateStateAndStatus('speaking', 'กำลังแจ้งผลการวิเคราะห์...');
       speak(responseToSpeak, () => {
         updateStateAndStatus('idle', 'ปรึกษาอีกครั้ง กดปุ่มไมค์ได้เลยค่ะ');
@@ -359,7 +331,7 @@ export const DrRakAvatar: React.FC = () => {
 
   const saveHistory = (newItem: HistoryItem) => {
       setHistory(prev => {
-          const newHistory = [newItem, ...prev].slice(0, 20); // Keep last 20 consultations
+          const newHistory = [newItem, ...prev].slice(0, 20);
           localStorage.setItem('dr_rak_history', JSON.stringify(newHistory));
           return newHistory;
       });
@@ -387,7 +359,7 @@ export const DrRakAvatar: React.FC = () => {
                     <p className="text-slate-500 text-sm">{statusText}</p>
                 </div>
             </div>
-            <button onClick={() => setIsMuted(m => !m)} className="text-slate-400 hover:text-indigo-600 transition-colors">
+            <button onClick={() => setIsMuted(m => !m)} className={`text-slate-400 hover:text-indigo-600 transition-colors ${isMuted ? 'text-red-400' : ''}`}>
                 {isMuted ? <VolumeOffIcon className="w-6 h-6"/> : <SpeakerWaveIcon className="w-6 h-6"/>}
             </button>
         </div>
@@ -395,7 +367,7 @@ export const DrRakAvatar: React.FC = () => {
         <div className="relative flex flex-col md:flex-row items-center gap-6">
           <div className="relative shrink-0">
             <DrRakSvgAvatar className="w-32 h-32 shadow-lg" />
-            <div className={`absolute inset-0 rounded-full border-4 border-indigo-500 transition-all duration-500 pointer-events-none ${interactionState.startsWith('listening') ? 'animate-pulse opacity-100' : 'opacity-0 scale-125'}`}></div>
+            <div className={`absolute inset-0 rounded-full border-4 border-indigo-500 transition-all duration-500 pointer-events-none ${interactionState === 'listening' ? 'animate-pulse opacity-100' : 'opacity-0 scale-125'}`}></div>
           </div>
 
           <div className="w-full">
@@ -404,12 +376,12 @@ export const DrRakAvatar: React.FC = () => {
               onChange={(e) => setSymptoms(e.target.value)}
               placeholder="อาการของคุณจะปรากฏที่นี่..."
               className="w-full h-28 p-3 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-              readOnly={interactionState !== 'idle' && interactionState !== 'waitingForWakeWord'}
+              readOnly={interactionState !== 'idle' && interactionState !== 'listening'}
             />
             <div className="flex items-center justify-end gap-2 mt-2">
                 <button
                     onClick={handleMicClick}
-                    disabled={isLoading}
+                    disabled={isLoading || interactionState === 'analyzing' || interactionState === 'speaking'}
                     className={`px-4 py-2 rounded-lg font-bold text-white transition-all flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
                         interactionState === 'idle' 
                         ? 'bg-indigo-600 hover:bg-indigo-700' 
@@ -417,7 +389,7 @@ export const DrRakAvatar: React.FC = () => {
                     }`}
                 >
                     {interactionState === 'idle' ? <MicIcon className="w-5 h-5"/> : <StopIcon className="w-5 h-5"/>}
-                    <span>{interactionState === 'idle' ? 'เริ่มปรึกษา' : 'หยุด'}</span>
+                    <span>{interactionState === 'idle' ? 'กดเพื่อพูดอาการ' : 'หยุด / ส่ง'}</span>
                 </button>
             </div>
           </div>
