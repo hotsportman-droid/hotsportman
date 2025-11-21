@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StethoscopeIcon, CheckCircleIcon, ExclamationIcon, SpeakerWaveIcon, MicIcon, StopIcon, VolumeOffIcon } from './icons';
+import { StethoscopeIcon, CheckCircleIcon, ExclamationIcon, SpeakerWaveIcon, MicIcon, StopIcon, VolumeOffIcon, MapPinIcon } from './icons';
 import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
 // --- Types for Speech Recognition ---
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+type InteractionState = 'idle' | 'waitingForWakeWord' | 'listening' | 'listeningForFollowUp' | 'analyzing' | 'speaking';
+
 
 // --- UI HELPERS ---
 const MarkdownContent = ({ text }: { text: string }) => {
@@ -27,11 +29,11 @@ const MarkdownContent = ({ text }: { text: string }) => {
     );
 };
 
-const DrRakImage = ({ onMicClick, interactionState }: { onMicClick: () => void, interactionState: string }) => (
+const DrRakImage = ({ onMicClick, interactionState }: { onMicClick: () => void, interactionState: InteractionState }) => (
   <div className="relative w-32 h-32 md:w-40 md:h-40 mx-auto mb-6 group">
     <svg viewBox="0 0 200 200" className="w-full h-full drop-shadow-2xl filter transition-transform duration-500 transform group-hover:scale-105">
       {/* Background Aura */}
-      <circle cx="100" cy="100" r="90" fill={interactionState === 'waitingForWakeWord' ? '#E0E7FF' : '#FCE7F3'} className={`opacity-70 transition-colors duration-500 ${interactionState === 'listening' || interactionState === 'speaking' || interactionState === 'waitingForWakeWord' ? 'animate-pulse' : ''}`} />
+      <circle cx="100" cy="100" r="90" fill={interactionState === 'waitingForWakeWord' ? '#E0E7FF' : '#FCE7F3'} className={`opacity-70 transition-colors duration-500 ${['listening', 'listeningForFollowUp', 'speaking', 'waitingForWakeWord'].includes(interactionState) ? 'animate-pulse' : ''}`} />
       <circle cx="100" cy="100" r="82" fill="#FFFFFF" stroke="#F1F5F9" strokeWidth="2" />
       
       {/* Female Doctor Illustration */}
@@ -69,428 +71,437 @@ const DrRakImage = ({ onMicClick, interactionState }: { onMicClick: () => void, 
     <button 
         onClick={onMicClick}
         className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 flex items-center justify-center rounded-full p-2.5 shadow-md transition-all duration-300 z-20
-            ${interactionState === 'listening' 
+            ${['listening', 'listeningForFollowUp'].includes(interactionState)
                 ? 'bg-red-500 hover:bg-red-600 animate-pulse scale-110' 
                 : interactionState === 'waitingForWakeWord'
-                ? 'bg-blue-500 hover:bg-blue-600 scale-110'
-                : 'bg-indigo-600 hover:bg-indigo-700'}
-        `}
-        aria-label={interactionState === 'listening' ? 'หยุดฟัง' : 'กดเพื่อเริ่มบอกอาการ'}
+                ? 'bg-blue-500 hover:bg-blue-600 scale-105 animate-pulse'
+                : 'bg-indigo-600 hover:bg-indigo-700'
+            }`}
+        aria-label={['listening', 'listeningForFollowUp'].includes(interactionState) ? "หยุดพูด" : "เริ่มพูด"}
     >
-        {interactionState === 'listening' ? (
-            <StopIcon className="w-5 h-5 text-white" />
-        ) : (
-            <MicIcon className="w-5 h-5 text-white" />
-        )}
+        {['listening', 'listeningForFollowUp'].includes(interactionState)
+            ? <StopIcon className="w-6 h-6 text-white" />
+            : <MicIcon className="w-6 h-6 text-white" />
+        }
     </button>
   </div>
 );
 
-interface AnalysisResult {
-    symptoms: string;
-    advice: string;
-    precautions: string;
-    speechText: string;
+// --- MAIN COMPONENT ---
+interface Analysis {
+  assessment: string;
+  recommendation: string;
+  warning: string;
 }
 
-type InteractionState = 'idle' | 'waitingForWakeWord' | 'listening' | 'processing' | 'speaking';
-
 export const DrRakAvatar: React.FC = () => {
-    const [inputText, setInputText] = useState('');
-    const [interactionState, setInteractionState] = useState<InteractionState>('idle');
-    const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+    const [symptoms, setSymptoms] = useState('');
+    const [analysisResult, setAnalysisResult] = useState<Analysis | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showFindHospitalButton, setShowFindHospitalButton] = useState(false);
     
-    const [isMuted, setIsMuted] = useState(false);
-    const isMutedRef = useRef(isMuted);
+    // Voice & Speech States
+    const [_interactionState, _setInteractionState] = useState<InteractionState>('idle');
+    const interactionStateRef = useRef(_interactionState);
+    const setInteractionState = (state: InteractionState) => {
+      interactionStateRef.current = state;
+      _setInteractionState(state);
+    };
 
+    const [isMuted, setIsMuted] = useState(false);
+    const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
     const recognitionRef = useRef<any>(null);
-    const silenceTimeoutRef = useRef<number | null>(null);
-    const interactionStateRef = useRef(interactionState);
+    const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
     const wakeWordDetectedRef = useRef(false);
 
+    // --- Voice Synthesis Setup ---
     useEffect(() => {
-        isMutedRef.current = isMuted;
-        if (isMuted) {
-            window.speechSynthesis.cancel();
-            if (interactionState === 'speaking') {
-                setInteractionState('idle');
+        const loadVoices = () => {
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                // Find a preferred Thai voice, like "Kanya" from Google, and fall back to any Thai voice.
+                const thaiVoice = voices.find(voice => voice.lang === 'th-TH' && voice.name.includes('Kanya')) || 
+                                  voices.find(voice => voice.lang === 'th-TH');
+                if (thaiVoice) {
+                    setSelectedVoice(thaiVoice);
+                }
             }
-        }
-    }, [isMuted]);
+        };
 
-    useEffect(() => {
-        interactionStateRef.current = interactionState;
-    }, [interactionState]);
+        // Voices can be loaded asynchronously.
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+        loadVoices(); // Initial attempt
 
+        return () => {
+            window.speechSynthesis.onvoiceschanged = null;
+        };
+    }, []);
+
+    const WAKE_WORD = "หมอ";
+    const GREETINGS = [
+        "สวัสดีค่ะ หมอรักษ์เองค่ะ วันนี้เป็นอย่างไรบ้างคะ สบายดีไหม",
+        "ได้ยินแล้วค่ะ เป็นอย่างไรบ้างคะวันนี้ รู้สึกไม่สบายตรงไหนเป็นพิเศษหรือเปล่า",
+        "สวัสดีค่ะ สบายดีนะคะ มีอะไรให้หมอช่วยไหมคะ เล่าอาการมาได้เลยค่ะ"
+    ];
 
     const speak = (text: string, onEndCallback?: () => void) => {
-        window.speechSynthesis.cancel();
-        if (!text || isMutedRef.current) {
-             if (onEndCallback) onEndCallback();
-             return;
-        }
+        if ('speechSynthesis' in window && !isMuted) {
+            setInteractionState('speaking');
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'th-TH';
+            utterance.rate = 1.0; // Adjusted for a more natural, human-like pace.
+            utterance.pitch = 1.0;
 
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'th-TH';
-        utterance.rate = 1.0;
-        
-        const voices = window.speechSynthesis.getVoices();
-        const thaiVoice = voices.find(v => v.lang.includes('th-TH'));
-        if (thaiVoice) utterance.voice = thaiVoice;
-
-        utterance.onstart = () => setInteractionState('speaking');
-        utterance.onend = () => {
-            if (interactionStateRef.current === 'speaking') { // Ensure we don't idle prematurely
-                setInteractionState('idle');
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
             }
-            if (onEndCallback) onEndCallback();
-        };
-        utterance.onerror = (e) => {
-            console.error("TTS Error", e);
-            setInteractionState('idle');
-            if (onEndCallback) onEndCallback();
-        };
 
-        window.speechSynthesis.speak(utterance);
-    };
-
-    const stopListening = () => {
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-        }
-        if (silenceTimeoutRef.current) {
-            clearTimeout(silenceTimeoutRef.current);
-            silenceTimeoutRef.current = null;
-        }
-        if (interactionStateRef.current !== 'speaking') {
-            setInteractionState('idle');
+            utterance.onend = () => {
+                if (interactionStateRef.current === 'speaking') {
+                   setInteractionState('idle');
+                }
+                if (onEndCallback) onEndCallback();
+            };
+            utteranceRef.current = utterance;
+            window.speechSynthesis.cancel(); // Prevent overlapping speech
+            window.speechSynthesis.speak(utterance);
+        } else {
+            if (onEndCallback) onEndCallback();
         }
     };
-
-    useEffect(() => {
-        if (!SpeechRecognition) {
-            console.warn("Speech Recognition not supported by this browser.");
+    
+    // Use useCallback to ensure handleAnalyze has the latest state when called from recognition events
+    const handleAnalyze = React.useCallback(async () => {
+        if (!symptoms.trim()) {
+            setError("กรุณาบอกอาการเบื้องต้นก่อนค่ะ");
             return;
         }
 
-        const recognizer = new SpeechRecognition();
-        recognizer.lang = 'th-TH';
-        recognizer.continuous = true;
-        recognizer.interimResults = true;
+        // --- Start analysis ---
+        setAnalysisResult(null);
+        setError(null);
+        setIsAnalyzing(true);
+        setShowFindHospitalButton(false);
+        setInteractionState('analyzing');
 
-        recognizer.onresult = (event: any) => {
+        try {
+            if (!process.env.API_KEY) {
+              throw new Error("API key is not configured.");
+            }
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+            const instruction = `คุณคือ "หมอรักษ์" ผู้ช่วย AI ด้านสุขภาพที่เป็นมิตรและให้ข้อมูลเบื้องต้น
+            วิเคราะห์อาการที่ผู้ใช้ให้มาตามหลักการแพทย์แผนปัจจุบันอย่างรอบคอบ
+            ให้ผลลัพธ์เป็นภาษาไทยที่เข้าใจง่ายสำหรับคนทั่วไป
+            
+            **โครงสร้างผลลัพธ์ (สำคัญมาก):**
+            ใช้รูปแบบด้านล่างนี้เสมอ ห้ามเปลี่ยนแปลง และต้องมีครบทุกหัวข้อ:
+            
+            [ASSESSMENT]
+            (ใส่การประเมินความเป็นไปได้ของโรคหรือภาวะที่เป็นไปได้ 2-3 อย่าง โดยเรียงจากความเป็นไปได้มากที่สุด อธิบายสั้นๆ ว่าทำไมถึงคิดว่าเป็นเช่นนั้นจากอาการที่ให้มา)
+            
+            [RECOMMENDATION]
+            (ใส่คำแนะนำในการดูแลตัวเองเบื้องต้นที่สามารถทำได้ทันที เช่น การพักผ่อน การดื่มน้ำ การประคบ หรือยาพื้นฐานที่หาซื้อได้เอง)
+            
+            [WARNING]
+            (ใส่สัญญาณอันตรายหรืออาการที่ควรสังเกตเพิ่มเติม หากมีอาการเหล่านี้เมื่อไหร่ ควรไปพบแพทย์ทันที หากไม่มีสัญญาณอันตรายที่ชัดเจน ให้ระบุว่า "หากอาการไม่ดีขึ้นใน 2-3 วัน หรือมีความกังวลใจ ควรปรึกษาแพทย์")
+            
+            ---
+            อาการของผู้ใช้: "${symptoms}"`;
+            
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [{ role: "user", parts: [{ text: instruction }] }],
+                safetySettings: [
+                    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+                    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                ]
+            });
+
+            const resultText = response.text || '';
+            const parsedResult = parseAnalysis(resultText);
+            setAnalysisResult(parsedResult);
+            
+            if (resultText.includes('โรงพยาบาล') || resultText.includes('คลินิก')) {
+                setShowFindHospitalButton(true);
+            }
+
+            // Speak the assessment part
+            const initialResponseToSpeak = parsedResult.assessment ? `จากการประเมินเบื้องต้นนะคะ ${parsedResult.assessment}` : "การวิเคราะห์เสร็จสิ้นแล้วค่ะ";
+            speak(initialResponseToSpeak);
+
+        } catch (err: any) {
+            console.error("Gemini API error:", err);
+            setError("ขออภัยค่ะ เกิดข้อผิดพลาดในการวิเคราะห์ข้อมูล กรุณาลองใหม่อีกครั้ง");
+        } finally {
+            setIsAnalyzing(false);
+             if (interactionStateRef.current !== 'speaking') {
+                setInteractionState('idle');
+            }
+        }
+    }, [symptoms, isMuted, selectedVoice]);
+
+    const startListening = (mode: 'wakeWord' | 'symptoms' | 'followUp') => {
+        if (!SpeechRecognition) {
+            setError("ขออภัยค่ะ เบราว์เซอร์ของคุณไม่รองรับการสั่งการด้วยเสียง");
+            return;
+        }
+
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+        }
+        
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'th-TH';
+        recognition.interimResults = true;
+        recognition.continuous = true;
+
+        recognition.onresult = (event: any) => {
             let finalTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
                     finalTranscript += event.results[i][0].transcript;
                 }
             }
+            
+            if (mode === 'wakeWord' && !wakeWordDetectedRef.current) {
+                if (finalTranscript.toLowerCase().includes(WAKE_WORD)) {
+                    wakeWordDetectedRef.current = true;
+                    recognition.stop();
+                    const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+                    speak(randomGreeting, () => {
+                        startListening('symptoms');
+                    });
+                }
+            } else if (mode === 'symptoms' || mode === 'followUp') {
+                 if(finalTranscript) {
+                    setSymptoms(prev => (prev.trim() + ' ' + finalTranscript.trim()).trim());
+                }
+            }
+        };
 
-            if (interactionStateRef.current === 'waitingForWakeWord' && finalTranscript.includes('หมอ')) {
-                wakeWordDetectedRef.current = true;
-                recognitionRef.current.stop();
+        recognition.onerror = (event: any) => {
+            if (event.error !== 'no-speech') {
+                 setError(`เกิดข้อผิดพลาดในการรับเสียง: ${event.error}`);
+            }
+            setInteractionState('idle');
+        };
+
+        recognition.onend = () => {
+            if (interactionStateRef.current === 'idle') return;
+
+            if (interactionStateRef.current === 'listening') {
+                speak("มีอาการอื่นเพิ่มเติมอีกไหมคะ", () => {
+                    startListening('followUp');
+                });
+                return;
+            }
+            
+            if (interactionStateRef.current === 'listeningForFollowUp') {
+                handleAnalyze();
                 return;
             }
 
-            if (interactionStateRef.current === 'listening') {
-                if (finalTranscript) {
-                    setInputText(prev => (prev ? prev + ' ' : '') + finalTranscript);
+            if (interactionStateRef.current === 'waitingForWakeWord' && !wakeWordDetectedRef.current) {
+                 if (recognitionRef.current) {
+                    try { recognitionRef.current.start(); } catch (e) { console.error(e); }
                 }
-                if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-                silenceTimeoutRef.current = window.setTimeout(() => {
-                    stopListening();
-                }, 3000);
             }
         };
 
-        recognizer.onerror = (event: any) => {
-            console.error("Speech error", event.error);
-            wakeWordDetectedRef.current = false;
-            setInteractionState('idle');
-            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                setError('กรุณาอนุญาตให้ใช้ไมโครโฟนเพื่อคุยกับหมอค่ะ');
-            } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
-                setError('เกิดข้อผิดพลาดในการรับเสียง กรุณาลองอีกครั้ง');
-            }
-        };
+        recognitionRef.current = recognition;
+        recognition.start();
 
-        recognizer.onend = () => {
-            if (wakeWordDetectedRef.current) {
-                wakeWordDetectedRef.current = false; // Reset flag
-                
-                const GREETINGS = [
-                    "สวัสดีค่ะ หมอรักษ์ยินดีให้คำปรึกษาค่ะ เล่าอาการให้หมอฟังได้เลยนะคะ",
-                    "ได้ยินแล้วค่ะ วันนี้มีอาการอะไรให้หมอช่วยดูเป็นพิเศษไหมคะ",
-                    "สวัสดีค่ะ ไม่ต้องกังวลนะคะ เล่าอาการที่เป็นอยู่ให้หมอฟังช้าๆ ได้เลยค่ะ",
-                    "ค่ะ หมออยู่นี่แล้ว มีอะไรให้ช่วยคะ เล่าอาการมาได้เลย"
-                ];
-                const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+        if (mode === 'wakeWord') setInteractionState('waitingForWakeWord');
+        else if (mode === 'symptoms') setInteractionState('listening');
+        else if (mode === 'followUp') setInteractionState('listeningForFollowUp');
+    };
 
-                speak(randomGreeting, () => {
-                    setInputText('');
-                    setInteractionState('listening');
-                    setTimeout(() => recognitionRef.current.start(), 100);
-                });
-            } else if (interactionStateRef.current === 'waitingForWakeWord' || interactionStateRef.current === 'listening') {
-                setInteractionState('idle');
-            }
-        };
+    const stopListening = () => {
+        if (recognitionRef.current) {
+            recognitionRef.current.onend = null;
+            recognitionRef.current.stop();
+            recognitionRef.current = null;
+        }
+        setInteractionState('idle');
+    };
 
-        recognitionRef.current = recognizer;
-        
-        return () => {
-            recognitionRef.current?.abort();
-            window.speechSynthesis.cancel();
-            if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-        };
-    }, []);
-
-    const handleMicClick = () => {
-        setError(null);
-        if (interactionState === 'listening' || interactionState === 'waitingForWakeWord') {
+    const handleMicClick = async () => {
+        if (['listening', 'waitingForWakeWord', 'listeningForFollowUp'].includes(interactionStateRef.current)) {
             stopListening();
         } else {
-            if (recognitionRef.current) {
-                setInputText('');
-                setAnalysis(null);
-                setInteractionState('waitingForWakeWord');
-                recognitionRef.current.start();
-            } else {
-                setError('ขออภัยค่ะ อุปกรณ์ของคุณไม่รองรับการสั่งงานด้วยเสียง');
+             try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop());
+                wakeWordDetectedRef.current = false;
+                startListening('wakeWord');
+            } catch (err) {
+                console.error("Mic permission error:", err);
+                setError("กรุณาอนุญาตให้ใช้ไมโครโฟนเพื่อคุยกับหมอค่ะ");
             }
         }
     };
-    
-    const handleAnalyze = async () => {
-        if (!inputText.trim()) {
-            setError("กรุณาบอกอาการก่อนนะคะ");
-            return;
-        }
 
-        if (!process.env.API_KEY) {
-            setError("ไม่พบ API Key! กรุณาตั้งค่า Environment Variable ชื่อ 'API_KEY' ใน Vercel หรือไฟล์ .env");
-            return;
-        }
-
-        setInteractionState('processing');
-        setAnalysis(null);
-        setError(null);
-
-        const delayPromise = new Promise(resolve => setTimeout(resolve, 1500));
-        
-        try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            
-            const apiPromise = ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: inputText,
-                config: {
-                    systemInstruction: `คุณคือ "หมอรักษ์" แพทย์หญิงผู้ช่วย AI ที่มีความเชี่ยวชาญสูง
-                    - บุคลิก: สุภาพ อ่อนโยน มีความเห็นอกเห็นใจ
-                    - ภาษา: แทนตัวเองว่า "หมอ" ลงท้าย "คะ/ค่ะ"
-                    - หน้าที่: ให้คำแนะนำสุขภาพเบื้องต้น (ห้ามวินิจฉัยโรค/จ่ายยา)
-                    `,
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: Type.OBJECT,
-                        properties: {
-                            speech: { type: Type.STRING, description: "ข้อความพูดสรุปสั้นๆ ให้กำลังใจ (1-2 ประโยค)" },
-                            symptoms: { type: Type.STRING, description: "สรุปอาการที่จับใจความได้ พร้อมสาเหตุที่เป็นไปได้ (ใช้ bullet points)" },
-                            advice: { type: Type.STRING, description: "คำแนะนำการดูแลตัวเอง (ใช้ bullet points)" },
-                            precautions: { type: Type.STRING, description: "ข้อควรระวังหรือสัญญาณอันตรายที่ต้องไปพบแพทย์" }
-                        },
-                        required: ["speech", "symptoms", "advice", "precautions"]
-                    },
-                    safetySettings: [
-                        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-                        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-                        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-                        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH }
-                    ]
+    const toggleMute = () => {
+        setIsMuted(prev => {
+            if (!prev === true) { 
+                if (window.speechSynthesis.speaking) {
+                    window.speechSynthesis.cancel();
                 }
-            });
-
-            const [_, response] = await Promise.all([delayPromise, apiPromise]);
-
-            let resultText = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "{}";
-            
-            const firstBrace = resultText.indexOf('{');
-            const lastBrace = resultText.lastIndexOf('}');
-            if (firstBrace === -1 || lastBrace === -1) throw new Error("Invalid JSON format from AI");
-            resultText = resultText.substring(firstBrace, lastBrace + 1);
-
-            const result = JSON.parse(resultText);
-
-            const analysisResult: AnalysisResult = {
-                symptoms: result.symptoms || "-",
-                advice: result.advice || "-",
-                precautions: result.precautions || "-",
-                speechText: result.speech || "หมอได้รับข้อมูลแล้วค่ะ"
-            };
-            setAnalysis(analysisResult);
-
-            const fullReadOut = `${analysisResult.speechText} จากอาการที่คุณเล่ามา ${analysisResult.symptoms.replace(/[-*•]/g, '')} หมอขอแนะนำดังนี้ค่ะ ${analysisResult.advice.replace(/[-*•]/g, '')} และข้อควรระวังคือ ${analysisResult.precautions.replace(/[-*•]/g, '')} ขอให้หายไวๆ นะคะ`;
-            speak(fullReadOut);
-
-        } catch (err: any) {
-            console.error("AI Error:", err);
-            let errorMessage = "เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งค่ะ";
-            if (err.message?.includes('API Key')) errorMessage = "ไม่พบ API Key หรือการตั้งค่าผิดพลาด";
-            else if (err.message?.includes('SAFETY')) errorMessage = "เนื้อหาคำถามอาจขัดต่อนโยบายความปลอดภัย";
-            else if (err.message?.includes('JSON')) errorMessage = "เกิดข้อผิดพลาดในการอ่านข้อมูลจาก AI";
-            
-            setError(errorMessage);
-            setInteractionState('idle');
-        }
+            }
+            return !prev;
+        });
     };
 
-    const getStatusText = () => {
-        switch (interactionState) {
-            case 'waitingForWakeWord':
-                return "พร้อมรับฟัง... กรุณาเรียก 'หมอ' เพื่อเริ่มสนทนาค่ะ";
-            case 'listening':
-                return "กำลังฟัง... เล่าอาการได้เลยค่ะ (จะหยุดอัตโนมัติเมื่อเงียบ)";
-            case 'processing':
-                return "หมอกำลังวิเคราะห์อาการ...";
-            case 'speaking':
-                return "หมอกำลังพูด...";
-            default:
-                return "กดปุ่มไมค์เพื่อเริ่มบอกอาการ หรือพิมพ์ได้เลยค่ะ";
-        }
+    useEffect(() => {
+        return () => {
+            if (recognitionRef.current) {
+                recognitionRef.current.stop();
+            }
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+            }
+        };
+    }, []);
+    
+    // Re-add selectedVoice to handleAnalyze dependencies to ensure the callback has the latest voice
+    useEffect(() => {
+        // This is a pattern to update the callback without causing re-renders.
+        // The handleAnalyze is wrapped in useCallback, so we need to ensure its dependencies are correct.
+        // Adding selectedVoice to the dependency array of useCallback is the cleaner way.
+    }, [handleAnalyze]);
+
+
+    const handleFindHospitals = () => {
+        const query = encodeURIComponent("โรงพยาบาล คลินิก และร้านขายยา ใกล้ฉัน");
+        const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
+        window.open(url, '_blank');
     };
 
-    return (
-        <div className="bg-white rounded-3xl shadow-xl border border-pink-50 p-6 md:p-8 flex flex-col items-center text-center max-w-3xl mx-auto relative overflow-hidden transition-all hover:shadow-2xl">
-            <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-pink-400 via-rose-400 to-indigo-400"></div>
-            
-            <button
-                onClick={() => setIsMuted(!isMuted)}
-                className="absolute top-4 right-4 z-20 p-2 rounded-full bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-pink-500 transition-colors border border-slate-100 shadow-sm"
-                title={isMuted ? "เปิดเสียงอ่าน" : "ปิดเสียงอ่าน"}
-            >
-                {isMuted ? <VolumeOffIcon className="w-5 h-5" /> : <SpeakerWaveIcon className="w-5 h-5" />}
+    const parseAnalysis = (text: string): Analysis => {
+        const assessment = text.split('[ASSESSMENT]')[1]?.split('[RECOMMENDATION]')[0]?.trim() || '-';
+        const recommendation = text.split('[RECOMMENDATION]')[1]?.split('[WARNING]')[0]?.trim() || '-';
+        const warning = text.split('[WARNING]')[1]?.trim() || '-';
+        return { assessment, recommendation, warning };
+    };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg border border-slate-200/80 p-6 md:p-8">
+      
+      <div className="text-center">
+        <DrRakImage onMicClick={handleMicClick} interactionState={_interactionState} />
+        <h2 className="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight">ปรึกษาหมอรักษ์</h2>
+        <p className="text-slate-500 mt-2 text-sm md:text-base max-w-lg mx-auto">
+          บอกอาการเบื้องต้นของคุณให้หมอรักษ์ฟัง<br/>เพื่อรับคำแนะนำในการดูแลตัวเอง
+        </p>
+         <p className="text-xs text-slate-400 mt-3 min-h-[16px]">
+            {_interactionState === 'idle' && 'กดปุ่มไมค์เพื่อเริ่มบอกอาการ...'}
+            {_interactionState === 'waitingForWakeWord' && 'พร้อมรับฟัง... กรุณาเรียก "หมอ" เพื่อเริ่มสนทนาค่ะ'}
+            {_interactionState === 'listening' && 'กำลังฟัง... เล่าอาการได้เลยค่ะ'}
+            {_interactionState === 'listeningForFollowUp' && 'มีอาการอื่นอีกไหมคะ...'}
+            {_interactionState === 'analyzing' && 'กำลังวิเคราะห์อาการ...'}
+            {_interactionState === 'speaking' && 'หมอรักษ์กำลังพูด...'}
+        </p>
+      </div>
+
+      <div className="mt-6 max-w-xl mx-auto">
+        <div className="relative">
+             <textarea
+                id="symptoms-textarea"
+                rows={4}
+                value={symptoms}
+                onChange={(e) => setSymptoms(e.target.value)}
+                placeholder="เช่น มีไข้ ปวดหัว ตัวร้อน มีน้ำมูก..."
+                className="w-full p-4 pr-12 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                disabled={isAnalyzing || ['listening', 'listeningForFollowUp'].includes(_interactionState)}
+            />
+            <button onClick={toggleMute} className="absolute top-3 right-3 text-slate-400 hover:text-slate-600">
+                {isMuted ? <VolumeOffIcon className="w-6 h-6"/> : <SpeakerWaveIcon className="w-6 h-6"/>}
             </button>
+        </div>
+       
+        <button
+          onClick={handleAnalyze}
+          disabled={isAnalyzing || _interactionState !== 'idle' || !symptoms.trim()}
+          className="w-full mt-4 bg-pink-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 transition-all flex items-center justify-center disabled:bg-slate-400 disabled:cursor-not-allowed"
+        >
+          {isAnalyzing ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              กำลังวิเคราะห์...
+            </>
+          ) : (
+            <>
+              <StethoscopeIcon className="w-5 h-5 mr-2" />
+              วิเคราะห์อาการ
+            </>
+          )}
+        </button>
+      </div>
+      
+      {error && (
+        <div className="mt-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-center text-sm animate-fade-in">
+          {error}
+        </div>
+      )}
 
-            <div className="w-full max-w-2xl z-10">
-                <DrRakImage onMicClick={handleMicClick} interactionState={interactionState} />
-
-                <div className="mb-8">
-                    <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight">ปรึกษาหมอรักษ์</h3>
-                    <p className={`text-base transition-colors duration-300 mt-2 min-h-[24px]
-                        ${interactionState === 'listening' || interactionState === 'waitingForWakeWord' || interactionState === 'speaking' ? 'text-pink-600 font-semibold' : 'text-slate-500'}`
-                    }>
-                       {getStatusText()}
-                    </p>
-                </div>
-
-                <div className="text-left space-y-5">
-                    <div className="relative">
-                        <textarea
-                            value={inputText}
-                            onChange={(e) => setInputText(e.target.value)}
-                            placeholder="พิมพ์อาการของคุณที่นี่... เช่น ปวดหัวข้างเดียว ตุ้บๆ แพ้แสง มา 2 วันแล้ว..."
-                            className="w-full p-5 rounded-2xl border-2 border-slate-200 bg-slate-50 focus:bg-white focus:border-pink-400 focus:ring-4 focus:ring-pink-100 text-slate-700 resize-none transition-all h-36 text-base shadow-inner placeholder-slate-400"
-                            disabled={interactionState !== 'idle'}
-                        />
-                        {(interactionState === 'listening' || interactionState === 'waitingForWakeWord') && (
-                            <div className="absolute bottom-3 left-3 flex items-center text-pink-500 text-xs animate-pulse font-bold bg-white/80 px-2 py-1 rounded-lg shadow-sm">
-                                <MicIcon className="w-4 h-4 mr-1" /> กำลังบันทึกเสียง...
-                            </div>
-                        )}
-                    </div>
-                    
+      {analysisResult && (
+        <div className="mt-8 animate-fade-in">
+            <AnalysisResult result={analysisResult} />
+             {showFindHospitalButton && (
+                <div className="mt-6 animate-fade-in">
                     <button
-                        onClick={handleAnalyze}
-                        disabled={interactionState !== 'idle' || !inputText.trim()}
-                        className={`w-full py-3.5 px-6 rounded-xl font-bold text-white text-lg transition-all transform active:scale-[0.98] flex items-center justify-center shadow-lg
-                            ${interactionState !== 'idle' || !inputText.trim() 
-                                ? 'bg-slate-300 cursor-not-allowed shadow-none' 
-                                : 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 hover:shadow-pink-200'
-                            }`}
+                        onClick={handleFindHospitals}
+                        className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
                     >
-                        {interactionState === 'processing' ? (
-                            <>
-                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-3"></div>
-                                กำลังวิเคราะห์ข้อมูล...
-                            </>
-                        ) : (
-                            <>
-                                <StethoscopeIcon className="w-6 h-6 mr-2" />
-                                วิเคราะห์อาการ
-                            </>
-                        )}
+                        <MapPinIcon className="w-5 h-5" />
+                        ค้นหาสถานพยาบาลใกล้เคียง
                     </button>
-                    
-                    {error && (
-                        <div className="animate-fade-in p-4 bg-red-50 border-l-4 border-red-500 rounded-r-xl flex items-start text-red-800 shadow-sm">
-                            <ExclamationIcon className="w-6 h-6 mr-3 shrink-0 text-red-600 mt-0.5" />
-                            <span className="text-sm font-medium leading-relaxed">{error}</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {analysis && (
-                <div className="mt-10 w-full text-left animate-fade-in border-t border-slate-100 pt-8">
-                    <div className="bg-gradient-to-r from-pink-50 to-rose-50 p-5 rounded-2xl relative mb-6 shadow-sm border border-pink-100">
-                         <div className="flex items-start justify-between gap-4">
-                            <div className="flex items-start">
-                                <div className="shrink-0 mr-3 mt-1 bg-white p-1.5 rounded-full shadow-sm">
-                                    {interactionState === 'speaking' ? 
-                                        <SpeakerWaveIcon className="w-5 h-5 text-pink-500 animate-pulse"/> : 
-                                        <span className="text-xl">👩‍⚕️</span>
-                                    }
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold text-pink-400 uppercase tracking-wide mb-1">หมอรักษ์พูดว่า:</p>
-                                    <p className="text-pink-900 text-base leading-relaxed font-medium">
-                                        "{analysis.speechText}"
-                                    </p>
-                                </div>
-                            </div>
-                         </div>
-                    </div>
-
-                    <div className="grid gap-5 md:grid-cols-1">
-                        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex items-center mb-4 pb-3 border-b border-slate-100">
-                                <div className="p-2.5 bg-blue-100 rounded-xl text-blue-600 mr-4">
-                                    <StethoscopeIcon className="w-6 h-6" />
-                                </div>
-                                <h5 className="font-bold text-lg text-slate-800">วิเคราะห์อาการเบื้องต้น</h5>
-                            </div>
-                            <div className="text-slate-600 text-base pl-2">
-                                <MarkdownContent text={analysis.symptoms} />
-                            </div>
-                        </div>
-
-                        <div className="bg-emerald-50/50 rounded-2xl p-6 border border-emerald-100 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex items-center mb-4 pb-3 border-b border-emerald-100/50">
-                                <div className="p-2.5 bg-emerald-100 rounded-xl text-emerald-600 mr-4">
-                                    <CheckCircleIcon className="w-6 h-6" />
-                                </div>
-                                <h5 className="font-bold text-lg text-emerald-800">คำแนะนำการดูแลตัวเอง</h5>
-                            </div>
-                            <div className="text-slate-700 text-base pl-2">
-                                <MarkdownContent text={analysis.advice} />
-                            </div>
-                        </div>
-
-                        <div className="bg-amber-50/50 rounded-2xl p-6 border border-amber-100 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex items-center mb-4 pb-3 border-b border-amber-100/50">
-                                <div className="p-2.5 bg-amber-100 rounded-xl text-amber-600 mr-4">
-                                    <ExclamationIcon className="w-6 h-6" />
-                                </div>
-                                <h5 className="font-bold text-lg text-amber-800">ข้อควรระวัง / สัญญาณอันตราย</h5>
-                            </div>
-                            <div className="text-slate-700 text-base pl-2">
-                                <MarkdownContent text={analysis.precautions} />
-                            </div>
-                        </div>
-                    </div>
                 </div>
             )}
         </div>
-    );
+      )}
+
+    </div>
+  );
 };
+
+const AnalysisResult = ({ result }: { result: Analysis }) => (
+    <div className="space-y-6">
+        <div>
+            <div className="flex items-center mb-3">
+                <CheckCircleIcon className="w-7 h-7 text-blue-500 mr-3" />
+                <h3 className="text-lg font-bold text-slate-800">การประเมินเบื้องต้น</h3>
+            </div>
+            <div className="pl-10 text-slate-600 text-sm leading-relaxed border-l-2 border-blue-200 ml-3.5">
+                <MarkdownContent text={result.assessment} />
+            </div>
+        </div>
+
+        <div>
+            <div className="flex items-center mb-3">
+                <StethoscopeIcon className="w-7 h-7 text-green-500 mr-3" />
+                <h3 className="text-lg font-bold text-slate-800">คำแนะนำในการดูแลตัวเอง</h3>
+            </div>
+            <div className="pl-10 text-slate-600 text-sm leading-relaxed border-l-2 border-green-200 ml-3.5">
+                <MarkdownContent text={result.recommendation} />
+            </div>
+        </div>
+
+        <div>
+            <div className="flex items-center mb-3">
+                <ExclamationIcon className="w-7 h-7 text-red-500 mr-3" />
+                <h3 className="text-lg font-bold text-slate-800">ข้อควรระวังและสัญญาณอันตราย</h3>
+            </div>
+            <div className="pl-10 text-slate-600 text-sm leading-relaxed border-l-2 border-red-200 ml-3.5">
+                 <MarkdownContent text={result.warning} />
+            </div>
+        </div>
+    </div>
+);
