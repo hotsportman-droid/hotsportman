@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 const IconWrapper: React.FC<{ children: React.ReactNode, className?: string }> = ({ children, className }) => (
@@ -208,4 +209,10 @@ export const UserIcon: React.FC<{ className?: string }> = ({ className }) => (
       <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"></path>
       <circle cx="12" cy="7" r="4"></circle>
     </IconWrapper>
+);
+
+export const PaperPlaneIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <IconWrapper className={className}>
+    <path d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+  </IconWrapper>
 );

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { StethoscopeIcon, CheckCircleIcon, ExclamationIcon, SpeakerWaveIcon, MicIcon, StopIcon, VolumeOffIcon, MapPinIcon, HistoryIcon, ChevronDownIcon, UserIcon } from './icons';
+import { StethoscopeIcon, CheckCircleIcon, ExclamationIcon, SpeakerWaveIcon, MicIcon, StopIcon, VolumeOffIcon, MapPinIcon, HistoryIcon, ChevronDownIcon, UserIcon, PaperPlaneIcon } from './icons';
 import { GoogleGenAI } from "@google/genai";
 import { DrRakSvgAvatar } from './DrRakSvgAvatar';
 
@@ -35,7 +35,7 @@ export const DrRakAvatar: React.FC = () => {
   const [analysisResult, setAnalysisResult] = useState<Analysis | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [statusText, setStatusText] = useState('กดปุ่มไมค์เพื่อเริ่มปรึกษา...');
+  const [statusText, setStatusText] = useState('พิมพ์อาการ หรือกดปุ่มไมค์เพื่อปรึกษา...');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -82,7 +82,7 @@ export const DrRakAvatar: React.FC = () => {
     } catch (e) { console.error("Failed to load history:", e)}
 
     if (!SpeechRecognition) {
-      setStatusText('ขออภัยค่ะ เบราว์เซอร์นี้ไม่รองรับการสั่งการด้วยเสียง');
+      setStatusText('พิมพ์อาการของคุณได้เลยค่ะ (เบราว์เซอร์นี้ไม่รองรับเสียง)');
       return;
     }
 
@@ -139,7 +139,7 @@ export const DrRakAvatar: React.FC = () => {
     recognition.onerror = (event: any) => {
         if (event.error !== 'aborted' && event.error !== 'no-speech') {
             if (stateRef.current === 'listening') {
-                 updateStateAndStatus('idle', 'เกิดข้อผิดพลาดในการรับเสียง ลองใหม่อีกครั้งนะคะ');
+                 updateStateAndStatus('idle', 'เกิดข้อผิดพลาดในการรับเสียง ลองพิมพ์แทนได้นะคะ');
             }
         }
     };
@@ -194,7 +194,7 @@ export const DrRakAvatar: React.FC = () => {
     };
 
     utterance.onend = () => {
-         updateStateAndStatus('idle', 'หากมีอาการเพิ่มเติม กดปุ่มไมค์ได้เลยนะคะ');
+         updateStateAndStatus('idle', 'หากมีอาการเพิ่มเติม พิมพ์หรือพูดบอกหมอได้เลยนะคะ');
     };
 
     utterance.onerror = (e) => {
@@ -249,7 +249,13 @@ export const DrRakAvatar: React.FC = () => {
   const handleMainButtonClick = async () => {
     // Logic based on current state
     if (interactionState === 'idle') {
-        // Request permission and start
+        // NEW: If user has typed something, send it directly (Text Mode)
+        if (symptoms.trim().length > 0) {
+            handleAnalysis();
+            return;
+        }
+
+        // Otherwise, start Microphone (Voice Mode)
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             stream.getTracks().forEach(track => track.stop()); // Close immediately, just need permission
@@ -267,6 +273,11 @@ export const DrRakAvatar: React.FC = () => {
     } else if (interactionState === 'analyzing') {
         // Do nothing while analyzing
     }
+  };
+
+  // Helper to clean Markdown for visual display
+  const cleanDisplay = (text: string) => {
+      return text.replace(/\*\*/g, '').replace(/[\#]/g, '').trim();
   };
 
   // Helper to build natural speech that sounds like a human reading
@@ -452,7 +463,7 @@ export const DrRakAvatar: React.FC = () => {
             <textarea
               value={symptoms}
               onChange={(e) => setSymptoms(e.target.value)}
-              placeholder="กดปุ่มไมค์ แล้วเล่าอาการให้หมอฟังได้เลยค่ะ..."
+              placeholder="พิมพ์อาการ หรือกดปุ่มไมค์แล้วเล่าให้หมอฟังได้เลยค่ะ..."
               className="w-full h-28 p-4 text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none shadow-inner"
               readOnly={interactionState !== 'idle' && interactionState !== 'listening'}
             />
@@ -479,8 +490,17 @@ export const DrRakAvatar: React.FC = () => {
                         {interactionState === 'idle' && (
                             <>
                                 <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-                                <MicIcon className="w-5 h-5 relative z-10"/> 
-                                <span className="relative z-10">พูดอาการ</span>
+                                {symptoms.trim().length > 0 ? (
+                                    <>
+                                        <PaperPlaneIcon className="w-5 h-5 relative z-10"/>
+                                        <span className="relative z-10">ส่งอาการ</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <MicIcon className="w-5 h-5 relative z-10"/> 
+                                        <span className="relative z-10">พูดอาการ</span>
+                                    </>
+                                )}
                             </>
                         )}
                         {interactionState === 'listening' && <><StopIcon className="w-5 h-5"/> หยุด / ส่ง</>}
@@ -515,19 +535,25 @@ export const DrRakAvatar: React.FC = () => {
                     <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-3 text-base">
                         <CheckCircleIcon className="w-6 h-6 text-teal-500"/> ผลการประเมิน
                     </h4>
-                    <p className="text-slate-600 leading-relaxed text-base whitespace-pre-line">{analysisResult.assessment}</p>
+                    <p className="text-slate-600 leading-relaxed text-base whitespace-pre-line">
+                        {cleanDisplay(analysisResult.assessment)}
+                    </p>
                 </div>
                  <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
                     <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-3 text-base">
                         <StethoscopeIcon className="w-6 h-6 text-blue-500"/> คำแนะนำจากหมอ
                     </h4>
-                    <p className="text-slate-600 leading-relaxed text-base whitespace-pre-line">{analysisResult.recommendation}</p>
+                    <p className="text-slate-600 leading-relaxed text-base whitespace-pre-line">
+                        {cleanDisplay(analysisResult.recommendation)}
+                    </p>
                 </div>
                  <div className="bg-red-50 p-5 rounded-2xl border border-red-100 shadow-sm">
                     <h4 className="font-bold text-red-700 flex items-center gap-2 mb-3 text-base">
                         <ExclamationIcon className="w-6 h-6 text-red-500"/> ข้อควรระวัง
                     </h4>
-                    <p className="text-red-600 leading-relaxed text-base whitespace-pre-line">{analysisResult.warning}</p>
+                    <p className="text-red-600 leading-relaxed text-base whitespace-pre-line">
+                        {cleanDisplay(analysisResult.warning)}
+                    </p>
                 </div>
                 {showHospitalButton && (
                     <div className="pt-2 text-center">
@@ -580,7 +606,7 @@ export const DrRakAvatar: React.FC = () => {
                                         <h5 className="font-bold text-slate-800 flex items-center gap-2 mb-1 text-xs">
                                             <CheckCircleIcon className="w-4 h-4 text-green-500"/> ผลประเมิน
                                         </h5>
-                                        <p className="text-slate-600 pl-6 text-xs line-clamp-2">{item.analysis.assessment}</p>
+                                        <p className="text-slate-600 pl-6 text-xs line-clamp-2">{cleanDisplay(item.analysis.assessment)}</p>
                                     </div>
                                 </div>
                             </div>
