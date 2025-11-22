@@ -186,8 +186,8 @@ export const DrRakAvatar: React.FC = () => {
       utterance.voice = thaiVoice;
     }
     
-    utterance.rate = 0.9; // Slightly slower for clarity
-    utterance.pitch = 1.1; // Slightly higher for a female doctor persona
+    utterance.rate = 0.95; // Natural pace
+    utterance.pitch = 1.1; // Friendly professional tone
 
     utterance.onstart = () => {
          updateStateAndStatus('speaking', 'หมอรักษ์กำลังพูด... (กดปุ่มเพื่อหยุด)');
@@ -269,13 +269,35 @@ export const DrRakAvatar: React.FC = () => {
     }
   };
 
-  // Helper to build natural speech
+  // Helper to build natural speech that sounds like a human reading
   const constructResponseText = (result: Analysis) => {
-      // Convert Markdown-like lists or short phrases into full spoken sentences
-      // Replace common symbols that TTS might skip
-      const spokenRecommend = result.recommendation.replace(/-/g, 'ข้อที่ ');
+      // 1. Clean up Markdown characters that shouldn't be spoken
+      const clean = (t: string) => t.replace(/[\*_#]/g, '').trim();
       
-      return `จากการประเมินอาการนะคะ คนไข้ ${result.assessment}. สำหรับคำแนะนำในการดูแลตัวเองเบื้องต้น. ${spokenRecommend}. และสิ่งที่คนไข้ต้องระวังเป็นพิเศษคือ. ${result.warning}. หากอาการไม่ดีขึ้น แนะนำให้ไปโรงพยาบาลนะคะ`;
+      // 2. Process recommendation list to sound natural
+      // Split by newlines, remove bullets/numbers, and rejoin with natural pauses
+      const recLines = clean(result.recommendation)
+        .split('\n')
+        .map(l => l.replace(/^[-*•\d\.]+\s*/, '').trim()) // Remove "- " or "1. "
+        .filter(l => l.length > 0);
+        
+      let spokenRec = '';
+      if (recLines.length > 1) {
+          spokenRec = recLines.join('... แล้วก็... '); // Natural transition for lists
+      } else {
+          spokenRec = recLines[0] || '';
+      }
+
+      // 3. Construct the full sentence
+      return `
+        จากที่ฟังอาการนะคะ... ${clean(result.assessment)}... 
+        
+        สำหรับการดูแลตัวเองเบื้องต้นนะคะ... ${spokenRec}... 
+        
+        ส่วนข้อควรระวังคือ... ${clean(result.warning)}... 
+        
+        หากทำตามนี้แล้วอาการไม่ดีขึ้น แนะนำให้ไปพบแพทย์ที่โรงพยาบาลนะคะ
+      `.trim();
   };
 
   const handleAnalysis = async () => {
@@ -307,14 +329,14 @@ export const DrRakAvatar: React.FC = () => {
 
       Requirement:
       1. Assessment: ประเมินแนวโน้มอาการ (ห้ามฟันธงโรค) พูดเหมือนคุยกับคนไข้
-      2. Recommendation: แนะนำวิธีดูแลตัวเองที่บ้าน 3-4 ข้อ แบบละเอียด เข้าใจง่าย
+      2. Recommendation: แนะนำวิธีดูแลตัวเองที่บ้าน 3-4 ข้อ แบบละเอียด เข้าใจง่าย (ถ้าเป็นข้อๆ ให้ขึ้นบรรทัดใหม่)
       3. Warning: อาการที่ต้องรีบไปพบแพทย์ทันที
 
       Response Format (JSON Only):
       {
-        "assessment": "ข้อความประเมินอาการ (เช่น 'จากอาการที่คนไข้เล่ามา หมอคิดว่าคนไข้น่าจะมีภาวะ...')",
-        "recommendation": "ข้อความแนะนำ (เช่น 'หมอแนะนำให้คนไข้ดื่มน้ำมากๆ และพักผ่อน...')",
-        "warning": "ข้อควรระวัง (เช่น 'แต่ถ้าคนไข้มีไข้สูงเกิน 38 องศา ควรรีบไปพบแพทย์นะคะ')"
+        "assessment": "ข้อความประเมินอาการ",
+        "recommendation": "ข้อความแนะนำ",
+        "warning": "ข้อควรระวัง"
       }
     `;
 
@@ -493,19 +515,19 @@ export const DrRakAvatar: React.FC = () => {
                     <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-3 text-base">
                         <CheckCircleIcon className="w-6 h-6 text-teal-500"/> ผลการประเมิน
                     </h4>
-                    <p className="text-slate-600 leading-relaxed text-base">{analysisResult.assessment}</p>
+                    <p className="text-slate-600 leading-relaxed text-base whitespace-pre-line">{analysisResult.assessment}</p>
                 </div>
                  <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
                     <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-3 text-base">
                         <StethoscopeIcon className="w-6 h-6 text-blue-500"/> คำแนะนำจากหมอ
                     </h4>
-                    <p className="text-slate-600 leading-relaxed text-base">{analysisResult.recommendation}</p>
+                    <p className="text-slate-600 leading-relaxed text-base whitespace-pre-line">{analysisResult.recommendation}</p>
                 </div>
                  <div className="bg-red-50 p-5 rounded-2xl border border-red-100 shadow-sm">
                     <h4 className="font-bold text-red-700 flex items-center gap-2 mb-3 text-base">
                         <ExclamationIcon className="w-6 h-6 text-red-500"/> ข้อควรระวัง
                     </h4>
-                    <p className="text-red-600 leading-relaxed text-base">{analysisResult.warning}</p>
+                    <p className="text-red-600 leading-relaxed text-base whitespace-pre-line">{analysisResult.warning}</p>
                 </div>
                 {showHospitalButton && (
                     <div className="pt-2 text-center">
