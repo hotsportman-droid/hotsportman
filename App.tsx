@@ -9,6 +9,7 @@ import { ShareModal } from './components/ShareModal';
 import { Modal } from './components/Modal';
 import { DrRakAvatar } from './components/DrRakAvatar';
 import { QRCodeModal } from './components/QRCodeModal';
+import { InAppBrowserOverlay } from './components/InAppBrowserOverlay';
 
 // --- Final, Vercel-Native Unique Visitor Counter ---
 const BASE_FRIEND_COUNT = 450;
@@ -113,6 +114,7 @@ const App: React.FC = () => {
 
   return (
     <>
+      <InAppBrowserOverlay />
       <div className="min-h-screen min-h-[100dvh] bg-slate-50 text-slate-800">
         <header className="bg-slate-50/80 backdrop-blur-lg shadow-sm sticky top-0 z-20">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -237,11 +239,16 @@ const App: React.FC = () => {
         <footer className="bg-white mt-16 py-8 border-t border-slate-200">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center text-slate-500 text-sm">
             <p className="font-semibold text-red-600 mb-2">ข้อควรระวัง</p>
-            <p className="max-w-2xl mx-auto">
+            <p className="max-w-2xl mx-auto mb-6">
               ข้อมูลในแอปพลิเคชันนี้เป็นเพียงคำแนะนำเบื้องต้น
               ไม่สามารถใช้แทนการวินิจฉัยหรือการรักษาจากแพทย์ผู้เชี่ยวชาญได้
               หากมีความกังวลเกี่ยวกับสุขภาพ ควรปรึกษาแพทย์เสมอ
             </p>
+            <div className="border-t border-slate-100 pt-6">
+              <p className="text-slate-400 font-medium">
+                &copy; {new Date().getFullYear()} ลิขสิทธิ์เป็นของ บริษัท ดู กรุ๊ป (ไทยแลนด์) จำกัด
+              </p>
+            </div>
           </div>
         </footer>
       </div>
