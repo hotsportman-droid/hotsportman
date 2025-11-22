@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { StethoscopeIcon, CheckCircleIcon, ExclamationIcon, SpeakerWaveIcon, MicIcon, StopIcon, VolumeOffIcon, MapPinIcon, HistoryIcon, ChevronDownIcon, UserIcon, PaperPlaneIcon } from './icons';
+import { StethoscopeIcon, CheckCircleIcon, ExclamationIcon, SpeakerWaveIcon, MicIcon, StopIcon, VolumeOffIcon, MapPinIcon, HistoryIcon, ChevronDownIcon, UserIcon, PaperPlaneIcon, ShareIcon, ShieldCheckIcon, TrashIcon } from './icons';
 import { GoogleGenAI } from "@google/genai";
 import { DrRakSvgAvatar } from './DrRakSvgAvatar';
+import { Modal } from './Modal';
 
 // --- Types ---
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -35,13 +36,16 @@ export const DrRakAvatar: React.FC = () => {
   const [analysisResult, setAnalysisResult] = useState<Analysis | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [statusText, setStatusText] = useState('พิมพ์อาการ หรือกดปุ่มไมค์เพื่อปรึกษา...');
+  const [statusText, setStatusText] = useState('พิมพ์บอกอาการ หรือกดปุ่มไมค์เล่าให้หมอฟังได้เลยนะคะ');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false);
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<number | null>(null);
+  const speakingVisualTimerRef = useRef<number | null>(null);
   
   // Use ref to track state synchronously for event handlers
   const stateRef = useRef(interactionState);
@@ -82,7 +86,7 @@ export const DrRakAvatar: React.FC = () => {
     } catch (e) { console.error("Failed to load history:", e)}
 
     if (!SpeechRecognition) {
-      setStatusText('พิมพ์อาการของคุณได้เลยค่ะ (เบราว์เซอร์นี้ไม่รองรับเสียง)');
+      setStatusText('พิมพ์บอกอาการได้เลยนะคะ (เบราว์เซอร์นี้ไม่รองรับเสียง)');
       return;
     }
 
@@ -96,6 +100,14 @@ export const DrRakAvatar: React.FC = () => {
       if (stateRef.current !== 'listening') return;
 
       if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
+
+      // --- Responsive Animation Logic ---
+      setIsUserSpeaking(true);
+      if (speakingVisualTimerRef.current) window.clearTimeout(speakingVisualTimerRef.current);
+      speakingVisualTimerRef.current = window.setTimeout(() => {
+          setIsUserSpeaking(false);
+      }, 600); // Reset visual speaking state after silence
+      // ----------------------------------
 
       let finalTranscript = '';
       let interimTranscript = '';
@@ -112,7 +124,7 @@ export const DrRakAvatar: React.FC = () => {
         setSymptoms(prev => (prev + ' ' + finalTranscript).trim());
       }
 
-      setStatusText(interimTranscript ? '... ' + interimTranscript : 'กำลังฟัง... (พูดจบแล้วหยุดสักครู่)');
+      setStatusText(interimTranscript ? '... ' + interimTranscript : 'หมอฟังอยู่นะคะ... (พูดจบแล้วหยุดสักครู่)');
 
       // Auto-submit after silence (slightly longer duration for better usability)
       silenceTimerRef.current = window.setTimeout(() => {
@@ -126,12 +138,14 @@ export const DrRakAvatar: React.FC = () => {
         if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
         const currentState = stateRef.current;
         
+        setIsUserSpeaking(false);
+
         // If recognition stops unexpectedly while listening, check if we have input
         if (currentState === 'listening') {
             if (symptomsRef.current.trim().length > 0) {
                 handleAnalysis();
             } else {
-                updateStateAndStatus('idle', 'กดปุ่มไมค์เพื่อเริ่มบอกอาการ...');
+                updateStateAndStatus('idle', 'กดปุ่มไมค์เพื่อเริ่มเล่าอาการใหม่นะคะ...');
             }
         }
     };
@@ -139,7 +153,7 @@ export const DrRakAvatar: React.FC = () => {
     recognition.onerror = (event: any) => {
         if (event.error !== 'aborted' && event.error !== 'no-speech') {
             if (stateRef.current === 'listening') {
-                 updateStateAndStatus('idle', 'เกิดข้อผิดพลาดในการรับเสียง ลองพิมพ์แทนได้นะคะ');
+                 updateStateAndStatus('idle', 'ระบบรับเสียงมีปัญหา ลองพิมพ์บอกหมอแทนได้นะคะ');
             }
         }
     };
@@ -152,6 +166,7 @@ export const DrRakAvatar: React.FC = () => {
         window.speechSynthesis.cancel();
       }
       if(silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
+      if(speakingVisualTimerRef.current) window.clearTimeout(speakingVisualTimerRef.current);
     };
   }, []);
 
@@ -159,6 +174,7 @@ export const DrRakAvatar: React.FC = () => {
     stateRef.current = state;
     setInteractionState(state);
     setStatusText(text);
+    if (state !== 'listening') setIsUserSpeaking(false);
   };
   
   const speak = (text: string) => {
@@ -186,21 +202,21 @@ export const DrRakAvatar: React.FC = () => {
       utterance.voice = thaiVoice;
     }
     
-    utterance.rate = 0.95; // Natural pace
-    utterance.pitch = 1.1; // Friendly professional tone
+    utterance.rate = 1.0; // Slightly faster for natural conversation
+    utterance.pitch = 1.1; // Friendly tone
 
     utterance.onstart = () => {
-         updateStateAndStatus('speaking', 'หมอรักษ์กำลังพูด... (กดปุ่มเพื่อหยุด)');
+         updateStateAndStatus('speaking', 'หมอกำลังอธิบาย... (กดปุ่มเพื่อหยุด)');
     };
 
     utterance.onend = () => {
-         updateStateAndStatus('idle', 'หากมีอาการเพิ่มเติม พิมพ์หรือพูดบอกหมอได้เลยนะคะ');
+         updateStateAndStatus('idle', 'ถ้ามีอาการตรงไหนอีก บอกหมอได้เสมอเลยนะคะ');
     };
 
     utterance.onerror = (e) => {
         console.error("TTS Error:", e);
         // If TTS fails (often due to user interaction policy on mobile), reset to idle
-        updateStateAndStatus('idle', 'กดที่ "ฟังเสียงอีกครั้ง" เพื่อฟังคำแนะนำค่ะ');
+        updateStateAndStatus('idle', 'ลองกด "ฟังเสียงอีกครั้ง" ดูนะคะ');
     };
     
     window.speechSynthesis.speak(utterance);
@@ -209,7 +225,7 @@ export const DrRakAvatar: React.FC = () => {
   const stopSpeaking = () => {
       if (window.speechSynthesis) {
           window.speechSynthesis.cancel();
-          updateStateAndStatus('idle', 'หยุดพูดแล้วค่ะ');
+          updateStateAndStatus('idle', 'หยุดพูดแล้วค่ะ ถ้าพร้อมแล้วคุยกันต่อได้เลยนะคะ');
       }
   };
 
@@ -222,14 +238,14 @@ export const DrRakAvatar: React.FC = () => {
         recognitionRef.current.stop();
         // Short delay to ensure clean restart
         setTimeout(() => {
-             updateStateAndStatus('listening', 'กำลังฟัง... เล่าอาการได้เลยค่ะ');
+             updateStateAndStatus('listening', 'หมอกำลังตั้งใจฟังอยู่นะคะ... เล่าได้เลยค่ะ');
              setSymptoms('');
              setAnalysisResult(null);
              try {
                 recognitionRef.current.start();
              } catch(e) {
                 console.error("Error starting recognition:", e);
-                updateStateAndStatus('idle', 'ไม่สามารถเริ่มไมโครโฟนได้');
+                updateStateAndStatus('idle', 'ไม่สามารถเปิดไมโครโฟนได้ค่ะ');
              }
         }, 100);
       } catch(e) {
@@ -262,7 +278,7 @@ export const DrRakAvatar: React.FC = () => {
             startListening();
         } catch (err) {
             console.error('Microphone permission denied:', err);
-            setStatusText('กรุณาอนุญาตให้ใช้ไมโครโฟนค่ะ');
+            setStatusText('ช่วยเปิดไมโครโฟนให้หมอหน่อยนะคะ หมอจะได้ยินเสียงคนไข้ค่ะ');
         }
     } else if (interactionState === 'listening') {
         // Stop listening and analyze immediately
@@ -294,20 +310,22 @@ export const DrRakAvatar: React.FC = () => {
         
       let spokenRec = '';
       if (recLines.length > 1) {
-          spokenRec = recLines.join('... แล้วก็... '); // Natural transition for lists
+          // Use more conversational connectors
+          spokenRec = recLines.join('... แล้วก็... '); 
       } else {
           spokenRec = recLines[0] || '';
       }
 
-      // 3. Construct the full sentence
+      // 3. Construct the full sentence with warm tone
+      // Emphasize flow over structure
       return `
-        จากที่ฟังอาการนะคะ... ${clean(result.assessment)}... 
+        ${clean(result.assessment)}
         
-        สำหรับการดูแลตัวเองเบื้องต้นนะคะ... ${spokenRec}... 
+        ช่วงนี้หมออยากให้ลองดูแลตัวเองแบบนี้นะคะ... ${spokenRec}
         
-        ส่วนข้อควรระวังคือ... ${clean(result.warning)}... 
+        ที่สำคัญหมออยากฝากเรื่อง... ${clean(result.warning)}
         
-        หากทำตามนี้แล้วอาการไม่ดีขึ้น แนะนำให้ไปพบแพทย์ที่โรงพยาบาลนะคะ
+        ดูแลสุขภาพด้วยนะคะ หายไวๆ ค่ะคนไข้
       `.trim();
   };
 
@@ -316,11 +334,11 @@ export const DrRakAvatar: React.FC = () => {
     stopListening();
 
     if (!symptomsRef.current.trim()) {
-        updateStateAndStatus('idle', 'หมอยังไม่ได้ยินเสียงคนไข้เลยค่ะ ลองใหม่อีกครั้งนะคะ');
+        updateStateAndStatus('idle', 'หมอยังไม่ได้ยินเสียงเลยค่ะ... ไม่เป็นไรนะคะ ลองใหม่อีกครั้งนะ');
         return;
     }
     
-    updateStateAndStatus('analyzing', 'กำลังวิเคราะห์ข้อมูล... สักครู่นะคะ');
+    updateStateAndStatus('analyzing', 'หมอขอเวลาวิเคราะห์สักครู่นะคะ... เป็นกำลังใจให้นะคะ');
     setIsLoading(true);
 
     const apiKey = process.env.API_KEY;
@@ -332,27 +350,27 @@ export const DrRakAvatar: React.FC = () => {
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
-      Role: คุณคือ "หมอรักษ์" แพทย์หญิงผู้เชี่ยวชาญที่มีความเห็นอกเห็นใจ
-      Task: วิเคราะห์อาการสุขภาพจากข้อความ
-      Tone: สุภาพ, อ่อนโยน, ใช้ภาษาพูดที่เป็นธรรมชาติ (Spoken Language)
+      Role: คุณคือ "หมอรักษ์" (พี่หมอ) แพทย์หญิงที่มีความเมตตาสูง ใจดี อบอุ่น เหมือนพี่สาวดูแลน้อง
+      Task: ให้คำปรึกษาสุขภาพเบื้องต้นจากอาการที่ได้รับ
+      Tone: ภาษาพูด 100% (Spoken Thai), นุ่มนวล, อ่อนโยน, ใช้คำง่ายๆ (Simple words), ห้ามใช้ศัพท์วิชาการลิเก, ห้ามใช้คำว่า "รับประทาน" ให้ใช้ "ทาน" หรือ "กิน", ห้ามใช้ "ศีรษะ" ให้ใช้ "หัว"
 
-      Strict Instructions:
-      - **ห้ามเรียกผู้ใช้งานว่า "หนู" เด็ดขาด** ให้เรียกว่า **"คนไข้"** หรือ **"คุณ"** เท่านั้น
-      - **ห้ามใช้คำว่า "หนูก็"** ให้ใช้คำว่า **"คนไข้ควร"** แทน
-      - แทนตัวเองว่า "หมอ"
+      Strict Rules:
+      - **ห้ามเรียกผู้ใช้ว่า "หนู" เด็ดขาด** ให้ใช้คำว่า **"คนไข้"** หรือ **"คุณ"**
+      - **ห้ามใช้คำว่า "หนูก็"** ให้ใช้คำว่า **"คนไข้ควร"** หรือ **"คุณควร"**
+      - เริ่มต้นประโยคด้วยความเห็นอกเห็นใจเสมอ เช่น "โถ.. เจ็บแย่เลยนะคะ", "ฟังแล้วน่าเห็นใจจัง"
       
       Input Symptoms: "${symptomsRef.current}"
 
       Requirement:
-      1. Assessment: ประเมินแนวโน้มอาการ (ห้ามฟันธงโรค) พูดเหมือนคุยกับคนไข้
-      2. Recommendation: แนะนำวิธีดูแลตัวเองที่บ้าน 3-4 ข้อ แบบละเอียด เข้าใจง่าย (ถ้าเป็นข้อๆ ให้ขึ้นบรรทัดใหม่)
-      3. Warning: อาการที่ต้องรีบไปพบแพทย์ทันที
+      1. Assessment (การประเมิน): สรุปอาการแบบปลอบโยน (เช่น "อาการแบบนี้น่าจะเป็น... ไม่ต้องกังวลนะคะ")
+      2. Recommendation (คำแนะนำ): วิธีรักษา 3-4 ข้อ เขียนแบบเล่าให้ฟัง ไม่ใช่คำสั่ง (เช่น "ลองดื่มน้ำอุ่นๆ นะคะ จะช่วยให้ชุ่มคอ")
+      3. Warning (ข้อควรระวัง): อาการที่ต้องรีบไปหาหมอ (พูดด้วยความเป็นห่วง ไม่ใช่ขู่ให้กลัว)
 
       Response Format (JSON Only):
       {
-        "assessment": "ข้อความประเมินอาการ",
-        "recommendation": "ข้อความแนะนำ",
-        "warning": "ข้อควรระวัง"
+        "assessment": "ข้อความประเมินอาการ (ภาษาพูด เน้นความเข้าอกเข้าใจ)",
+        "recommendation": "ข้อความแนะนำ (ภาษาพูด เป็นข้อๆ)",
+        "warning": "ข้อควรระวัง (ภาษาพูด)"
       }
     `;
 
@@ -382,9 +400,50 @@ export const DrRakAvatar: React.FC = () => {
 
     } catch (error) {
       console.error('Error analyzing symptoms:', error);
-      updateStateAndStatus('idle', 'ขออภัยค่ะ ระบบขัดข้องชั่วคราว');
+      updateStateAndStatus('idle', 'ขออภัยค่ะ ระบบขัดข้องชั่วคราว ลองใหม่นะคะ');
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  const handleShareResult = async () => {
+    if (!analysisResult) return;
+
+    const shareText = `
+📋 สรุปผลการปรึกษาหมอรักษ์
+
+👤 อาการเบื้องต้น:
+"${symptoms}"
+
+🩺 ผลการประเมิน:
+${cleanDisplay(analysisResult.assessment)}
+
+💊 คำแนะนำ:
+${cleanDisplay(analysisResult.recommendation)}
+
+⚠️ ข้อควรระวัง:
+${cleanDisplay(analysisResult.warning)}
+
+ลองปรึกษาหมอรักษ์ได้ที่: ${window.location.href}
+    `.trim();
+
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: 'ผลการปรึกษาสุขภาพกับหมอรักษ์',
+                text: shareText,
+            });
+        } catch (err) {
+            console.error('Error sharing:', err);
+        }
+    } else {
+        // Fallback
+        try {
+            await navigator.clipboard.writeText(shareText);
+            alert('คัดลอกผลการปรึกษาเรียบร้อยแล้ว คุณสามารถนำไปวางเพื่อส่งต่อได้เลยค่ะ');
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
     }
   };
 
@@ -428,27 +487,55 @@ export const DrRakAvatar: React.FC = () => {
                     <p className={`text-sm ${getStatusColor()} transition-colors`}>{statusText}</p>
                 </div>
             </div>
-            <button onClick={() => setIsMuted(m => !m)} className={`text-slate-400 hover:text-indigo-600 transition-colors ${isMuted ? 'text-red-400' : ''}`}>
-                {isMuted ? <VolumeOffIcon className="w-6 h-6"/> : <SpeakerWaveIcon className="w-6 h-6"/>}
-            </button>
+            <div className="flex items-center gap-2">
+                <button 
+                    onClick={() => setIsPrivacyModalOpen(true)}
+                    className="text-slate-400 hover:text-indigo-600 transition-colors p-2 rounded-full hover:bg-indigo-50"
+                    title="ความเป็นส่วนตัว"
+                >
+                    <ShieldCheckIcon className="w-6 h-6" />
+                </button>
+                <button onClick={() => setIsMuted(m => !m)} className={`text-slate-400 hover:text-indigo-600 transition-colors p-2 rounded-full hover:bg-indigo-50 ${isMuted ? 'text-red-400' : ''}`}>
+                    {isMuted ? <VolumeOffIcon className="w-6 h-6"/> : <SpeakerWaveIcon className="w-6 h-6"/>}
+                </button>
+            </div>
         </div>
 
         <div className="relative flex flex-col md:flex-row items-center gap-8">
           
           {/* Avatar Section with Interactive Animations */}
-          <div className="relative shrink-0 flex justify-center items-center">
-            {/* Interaction Effects */}
+          <div className="relative shrink-0 flex justify-center items-center w-40 h-40">
+            
+            {/* LISTENING ANIMATION (Refined Fluid Ripples) */}
             {interactionState === 'listening' && (
-                <>
-                    <div className="absolute inset-0 rounded-full bg-red-500/10 animate-ping"></div>
-                    <div className="absolute -inset-2 rounded-full border-2 border-red-100 animate-pulse"></div>
-                </>
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    {/* Core Glow - Reacts strongly to speech */}
+                    <div className={`absolute w-24 h-24 rounded-full bg-red-500 blur-xl transition-all duration-150 ease-out ${isUserSpeaking ? 'opacity-50 scale-150' : 'opacity-10 scale-100'}`}></div>
+                    
+                    {/* Ambient Ripples (Always running gently to avoid resets) */}
+                    <div className={`absolute inset-0 rounded-full border border-red-300/30 opacity-0 animate-ripple-slow transition-opacity duration-500 ${isUserSpeaking ? 'opacity-0' : 'opacity-100'}`}></div>
+                    <div className={`absolute inset-0 rounded-full border border-red-300/20 opacity-0 animate-ripple-slow transition-opacity duration-500 delay-700 ${isUserSpeaking ? 'opacity-0' : 'opacity-100'}`} style={{ animationDelay: '1s' }}></div>
+
+                    {/* Active Speech Ripples (Fade in over ambient when speaking - Multi-layered) */}
+                    {[0, 1, 2].map(i => (
+                        <div 
+                            key={`fast-${i}`}
+                            className={`absolute inset-0 rounded-full border-2 border-red-500/60 opacity-0 animate-ripple-fast transition-opacity duration-200 ${isUserSpeaking ? 'opacity-100' : 'opacity-0'}`}
+                            style={{ animationDelay: `${i * 0.2}s` }}
+                        ></div>
+                    ))}
+                </div>
             )}
+
+            {/* ANALYZING ANIMATION (Spinning Ring) */}
             {interactionState === 'analyzing' && (
-                 <div className="absolute -inset-2 rounded-full border-4 border-indigo-100 border-t-indigo-500 animate-spin"></div>
+                 <div className="absolute inset-[-10px] rounded-full border-4 border-indigo-100 border-t-indigo-500 animate-spin"></div>
             )}
             
-            <DrRakSvgAvatar className="w-32 h-32 md:w-40 md:h-40 shadow-lg relative z-10" />
+            {/* Avatar with Speaking Animation */}
+            <div className={`relative z-10 transition-transform duration-300 ${isUserSpeaking ? 'scale-110' : 'scale-100'} ${interactionState === 'speaking' ? 'animate-subtle-bounce' : ''}`}>
+                 <DrRakSvgAvatar className="w-32 h-32 shadow-lg" />
+            </div>
             
             {/* Floating Status Badges */}
             {interactionState === 'speaking' && (
@@ -457,7 +544,7 @@ export const DrRakAvatar: React.FC = () => {
                  </div>
             )}
             {interactionState === 'listening' && (
-                 <div className="absolute -bottom-2 -right-2 bg-red-500 p-2 rounded-full shadow-lg border-2 border-white z-20 animate-pulse">
+                 <div className={`absolute -bottom-2 -right-2 p-2 rounded-full shadow-lg border-2 border-white z-20 transition-all duration-300 ${isUserSpeaking ? 'bg-red-600 scale-125 shadow-red-200' : 'bg-red-400'}`}>
                     <MicIcon className="w-5 h-5 text-white" />
                  </div>
             )}
@@ -468,7 +555,7 @@ export const DrRakAvatar: React.FC = () => {
             <textarea
               value={symptoms}
               onChange={(e) => setSymptoms(e.target.value)}
-              placeholder="พิมพ์อาการ หรือกดปุ่มไมค์แล้วเล่าให้หมอฟังได้เลยค่ะ..."
+              placeholder="พิมพ์บอกอาการ หรือกดปุ่มไมค์เล่าให้หมอฟังได้เลยนะคะ..."
               className="w-full h-28 p-4 text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none shadow-inner"
               readOnly={interactionState !== 'idle' && interactionState !== 'listening'}
             />
@@ -487,7 +574,7 @@ export const DrRakAvatar: React.FC = () => {
                             relative overflow-hidden group w-full md:w-auto px-8 py-3 rounded-full font-bold text-white transition-all 
                             flex items-center justify-center gap-3 shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
                             ${interactionState === 'idle' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200 hover:shadow-indigo-300' : ''}
-                            ${interactionState === 'listening' ? 'bg-red-500 hover:bg-red-600 shadow-red-200 animate-pulse' : ''}
+                            ${interactionState === 'listening' ? 'bg-red-500 hover:bg-red-600 shadow-red-200' : ''}
                             ${interactionState === 'speaking' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200' : ''}
                             ${interactionState === 'analyzing' ? 'bg-slate-400 cursor-wait' : ''}
                         `}
@@ -560,19 +647,27 @@ export const DrRakAvatar: React.FC = () => {
                         {cleanDisplay(analysisResult.warning)}
                     </p>
                 </div>
-                {showHospitalButton && (
-                    <div className="pt-2 text-center">
+                
+                <div className="pt-4 flex flex-col sm:flex-row gap-3 justify-center">
+                    {showHospitalButton && (
                         <button 
                          onClick={() => {
                             const query = encodeURIComponent("โรงพยาบาล คลินิก และร้านขายยา ใกล้ฉัน");
                             window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
                          }}
-                         className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-200 hover:scale-105 transition-transform">
+                         className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-200 hover:scale-105 transition-transform">
                             <MapPinIcon className="w-5 h-5" />
-                            ค้นหาสถานพยาบาลใกล้ฉัน
+                            ค้นหาสถานพยาบาล
                         </button>
-                    </div>
-                )}
+                    )}
+                    <button
+                        onClick={handleShareResult}
+                        className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-indigo-600 font-bold rounded-xl border border-indigo-200 shadow-sm hover:bg-indigo-50 transition-all"
+                    >
+                        <ShareIcon className="w-5 h-5" />
+                        ส่งต่อ/บันทึกผล
+                    </button>
+                </div>
             </div>
           )}
         </div>
@@ -628,12 +723,69 @@ export const DrRakAvatar: React.FC = () => {
             </div>
         </div>
       </div>
+      
+      {/* Privacy Settings Modal */}
+      <Modal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)}>
+        <div className="text-center">
+            <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ShieldCheckIcon className="w-7 h-7" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 mb-4">ข้อมูลและความเป็นส่วนตัว</h3>
+            
+            <div className="text-left text-sm text-slate-600 space-y-4 bg-slate-50 p-5 rounded-xl border border-slate-100 mb-6">
+                <div>
+                    <p className="font-bold text-slate-800 mb-1 flex items-center"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-2"></span>1. การประมวลผลข้อมูล</p>
+                    <p className="pl-4 text-slate-500">เสียงและข้อความของคุณจะถูกส่งไปประมวลผลที่ AI (Google Gemini) เพื่อวิเคราะห์อาการ และจะ <strong className="text-slate-700">ไม่ถูกจัดเก็บถาวร</strong> บนเซิร์ฟเวอร์</p>
+                </div>
+                <div>
+                    <p className="font-bold text-slate-800 mb-1 flex items-center"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-2"></span>2. การจัดเก็บข้อมูล</p>
+                    <p className="pl-4 text-slate-500">ประวัติการสนทนาทั้งหมดถูกบันทึกไว้ใน <strong className="text-slate-700">อุปกรณ์นี้เท่านั้น (Local Storage)</strong> เพื่อให้คุณดูย้อนหลังได้สะดวก</p>
+                </div>
+                <div className="pt-2 border-t border-slate-200/50">
+                     <p className="text-xs text-red-500">*ข้อมูลสุขภาพเป็นเรื่องละเอียดอ่อน โปรดระมัดระวังในการใช้งานในที่สาธารณะ</p>
+                </div>
+            </div>
+
+            <button
+                onClick={() => {
+                    clearHistory();
+                    setIsPrivacyModalOpen(false);
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white text-red-600 font-bold rounded-xl border border-red-100 hover:bg-red-50 transition-colors shadow-sm"
+            >
+                <TrashIcon className="w-5 h-5" />
+                ลบประวัติการสนทนาทั้งหมด
+            </button>
+        </div>
+      </Modal>
+
        <style>{`
         @keyframes fade-in-up {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
         .animate-fade-in-up { animation: fade-in-up 0.4s ease-out forwards; }
+
+        /* Refined Fluid Ripple Animations */
+        @keyframes ripple-slow {
+          0% { transform: scale(0.9); opacity: 0; border-width: 1px; }
+          50% { opacity: 0.3; }
+          100% { transform: scale(1.4); opacity: 0; border-width: 0px; }
+        }
+        .animate-ripple-slow { animation: ripple-slow 3s ease-in-out infinite; }
+
+        @keyframes ripple-fast {
+          0% { transform: scale(0.9); opacity: 0.8; border-width: 3px; }
+          100% { transform: scale(1.6); opacity: 0; border-width: 0px; }
+        }
+        .animate-ripple-fast { animation: ripple-fast 1.2s cubic-bezier(0, 0, 0.2, 1) infinite; }
+
+        /* Subtle Speaking Bounce */
+        @keyframes subtle-bounce {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.03); }
+        }
+        .animate-subtle-bounce { animation: subtle-bounce 1.5s ease-in-out infinite; }
       `}</style>
     </div>
   );
