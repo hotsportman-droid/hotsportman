@@ -1,6 +1,5 @@
 
-import React, { useState } from "react";
-import { UserIcon } from "./icons";
+import React from "react";
 
 interface Props {
   className?: string;
@@ -13,59 +12,171 @@ export const DrRakSvgAvatar: React.FC<Props> = ({
   size = 200,
   showHologram = true,
 }) => {
-  const [imageError, setImageError] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // Configuration for Female Doctor:
-  // - seed: DrRakOfficial -> Ensures consistent face
-  // - top: longHairStraight -> Female look
-  // - accessories: prescription02 -> Round glasses (Professional & Kind)
-  // - clothing: blazerAndShirt -> Doctor-like coat
-  // - clothingColor: ffffff -> White coat
-  // - hairColor: 2c1b18 -> Dark brown natural hair
-  // - skinColor: f5d0b0 -> Light skin tone
-  const avatarUrl = `https://api.dicebear.com/9.x/avataaars/svg?seed=DrRakOfficial&flip=false&rotate=0&scale=100&radius=0&backgroundColor=b6e3f4&backgroundType=gradientLinear&clothing=blazerAndShirt&clothingColor=ffffff&accessories=prescription02&top=longHairStraight&hairColor=2c1b18&facialHair[]=&skinColor=f5d0b0&eyes=default&eyebrows=defaultNatural&mouth=smile`;
+  // Determine styles. If className has width/height classes (like w-32), use them. 
+  // Otherwise fallback to inline size.
+  const hasSizeClass = className.includes("w-") || className.includes("h-");
+  const styleProps = hasSizeClass ? {} : { width: size, height: size };
 
   return (
     <div
       className={`relative flex items-center justify-center rounded-full select-none ${className}`}
-      style={{ width: size, height: size }}
+      style={styleProps}
     >
-      {/* 1. Outer Glow Ring (AI Effect) */}
+      {/* 1. Outer Glow Ring (Holographic AI Effect) */}
       <div
         className={`absolute inset-0 rounded-full transition-opacity duration-700 ${
           showHologram ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div className="absolute inset-[-4px] rounded-full bg-gradient-to-tr from-indigo-400 via-blue-300 to-teal-300 opacity-60 blur-md animate-pulse" />
-        <div className="absolute inset-0 rounded-full border-2 border-white/50" />
+        <div className="absolute inset-[-6px] rounded-full bg-gradient-to-tr from-indigo-300 via-purple-200 to-teal-200 opacity-50 blur-lg animate-pulse" />
+        <div className="absolute inset-0 rounded-full border-2 border-white/60" />
       </div>
 
       {/* 2. Avatar Container */}
-      <div className="relative w-full h-full rounded-full overflow-hidden bg-slate-100 shadow-inner border-4 border-white">
-        {!imageError ? (
-          <img
-            src={avatarUrl}
-            alt="Dr. Rak Avatar"
-            className={`w-full h-full object-cover transition-all duration-700 transform ${
-              isLoaded ? "opacity-100 scale-100" : "opacity-0 scale-95"
-            }`}
-            onLoad={() => setIsLoaded(true)}
-            onError={() => setImageError(true)}
-          />
-        ) : (
-          // Fallback if API fails
-          <div className="flex items-center justify-center w-full h-full bg-indigo-50 text-indigo-300">
-            <UserIcon className="w-1/2 h-1/2" />
-          </div>
-        )}
+      <div className="relative w-full h-full rounded-full overflow-hidden bg-indigo-50 shadow-lg border-4 border-white z-10">
+        
+        {/* NEW MODERN ARTISTIC SVG AVATAR */}
+        <svg 
+          viewBox="0 0 400 400" 
+          className="w-full h-full" 
+          xmlns="http://www.w3.org/2000/svg" 
+          preserveAspectRatio="xMidYMid slice"
+        >
+            <defs>
+                {/* Skin Gradient: Soft warm tone */}
+                <linearGradient id="skinGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#FFE5D1" />
+                    <stop offset="100%" stopColor="#FFD1A8" />
+                </linearGradient>
 
-        {/* 3. Glossy Overlay (Glass Effect) */}
-        <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/30 to-transparent opacity-50 pointer-events-none" />
+                {/* Hair Gradient: Dark glossy brown */}
+                <linearGradient id="hairGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#4A3830" />
+                    <stop offset="100%" stopColor="#2D211C" />
+                </linearGradient>
+
+                {/* Coat Gradient: White to soft blue-grey shadow */}
+                <linearGradient id="coatGradient" x1="50%" y1="0%" x2="50%" y2="100%">
+                    <stop offset="0%" stopColor="#FFFFFF" />
+                    <stop offset="100%" stopColor="#F1F5F9" />
+                </linearGradient>
+
+                {/* Shirt Gradient: Professional Teal */}
+                <linearGradient id="shirtGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#2DD4BF" />
+                    <stop offset="100%" stopColor="#0F766E" />
+                </linearGradient>
+
+                {/* Background Abstract */}
+                <radialGradient id="bgGradient" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#EEF2FF" />
+                    <stop offset="100%" stopColor="#C7D2FE" />
+                </radialGradient>
+            </defs>
+
+            {/* Background */}
+            <rect width="400" height="400" fill="url(#bgGradient)" />
+            <circle cx="50" cy="100" r="30" fill="#FFFFFF" opacity="0.3" />
+            <circle cx="350" cy="60" r="50" fill="#FFFFFF" opacity="0.4" />
+            <circle cx="320" cy="300" r="20" fill="#FFFFFF" opacity="0.3" />
+
+            {/* --- BACK HAIR (Layered BEHIND Body and Neck) --- */}
+            {/* Adjusted Y coordinates (+10) to match previous transform position */}
+            <path d="M120,190 C110,290 120,340 150,360 L250,360 C280,340 290,290 280,190" fill="#2D211C" />
+
+            {/* --- BODY --- */}
+            <g transform="translate(0, 40)">
+                {/* Shoulders/Coat Base */}
+                <path d="M60,360 C60,280 110,240 200,240 C290,240 340,280 340,360 V400 H60 V360 Z" fill="url(#coatGradient)" />
+                
+                {/* Inner Shirt (V-neck) */}
+                <path d="M160,240 L200,310 L240,240" fill="url(#shirtGradient)" />
+                <path d="M160,240 L200,270 L240,240" fill="none" /> 
+                
+                {/* Coat Lapels */}
+                <path d="M140,240 L200,360 L180,400 L60,400 L60,360 C60,300 140,240 140,240 Z" fill="url(#coatGradient)" opacity="0.9" />
+                <path d="M260,240 L200,360 L220,400 L340,400 L340,360 C340,300 260,240 260,240 Z" fill="url(#coatGradient)" opacity="0.9" />
+                
+                {/* Lapel Shadow Detail */}
+                <path d="M200,360 L140,240" stroke="#CBD5E1" strokeWidth="1" />
+                <path d="M200,360 L260,240" stroke="#CBD5E1" strokeWidth="1" />
+            </g>
+
+            {/* --- NECK --- */}
+            <path d="M175,220 L175,260 C175,275 225,275 225,260 L225,220" fill="#FFD1A8" />
+
+            {/* --- HEAD --- */}
+            <g transform="translate(0, 10)">
+                {/* Face Shape */}
+                <path d="M130,150 C130,240 155,275 200,275 C245,275 270,240 270,150 C270,80 240,50 200,50 C160,50 130,80 130,150 Z" fill="url(#skinGradient)" />
+                
+                {/* Blush */}
+                <ellipse cx="155" cy="185" rx="12" ry="8" fill="#FF8A80" opacity="0.3" />
+                <ellipse cx="245" cy="185" rx="12" ry="8" fill="#FF8A80" opacity="0.3" />
+
+                {/* --- FACE FEATURES --- */}
+                {/* Eyes */}
+                <g fill="#3E2723">
+                    {/* Left Eye */}
+                    <ellipse cx="165" cy="165" rx="9" ry="11" />
+                    <circle cx="168" cy="162" r="3" fill="white" /> {/* Highlight */}
+                    {/* Right Eye */}
+                    <ellipse cx="235" cy="165" rx="9" ry="11" />
+                    <circle cx="238" cy="162" r="3" fill="white" /> {/* Highlight */}
+                </g>
+                
+                {/* Eyelashes */}
+                <path d="M155,160 Q150,155 148,150" stroke="#3E2723" strokeWidth="2" fill="none" />
+                <path d="M245,160 Q250,155 252,150" stroke="#3E2723" strokeWidth="2" fill="none" />
+
+                {/* Eyebrows */}
+                <path d="M155,145 Q165,140 175,145" stroke="#4A3830" strokeWidth="3" fill="none" strokeLinecap="round" />
+                <path d="M225,145 Q235,140 245,145" stroke="#4A3830" strokeWidth="3" fill="none" strokeLinecap="round" />
+
+                {/* Nose */}
+                <path d="M198,180 Q200,185 202,180" stroke="#CEA07E" strokeWidth="2" fill="none" />
+
+                {/* Mouth (Gentle Smile) */}
+                <path d="M185,205 Q200,215 215,205" stroke="#D84315" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+
+                {/* --- HAIR (Front) --- */}
+                {/* Main Hair Shape (Longer sides) */}
+                {/* Left Side */}
+                <path d="M200,30 C140,30 110,90 110,180 C110,250 120,320 140,330 C150,300 140,200 200,30" fill="url(#hairGradient)" />
+                {/* Right Side */}
+                <path d="M200,30 C260,30 290,90 290,180 C290,250 280,320 260,330 C250,300 260,200 200,30" fill="url(#hairGradient)" />
+
+                {/* Bangs / Fringe */}
+                <path d="M200,30 C180,30 140,50 135,120 C150,120 180,60 220,60 C250,60 265,120 270,150 C275,80 250,30 200,30" fill="url(#hairGradient)" />
+                
+                {/* Hair Highlight */}
+                <path d="M160,50 Q200,40 240,50" stroke="rgba(255,255,255,0.1)" strokeWidth="8" strokeLinecap="round" fill="none" />
+
+                {/* Glasses (Optional, makes her look smart/doctor-like) */}
+                <g stroke="#64748B" strokeWidth="2" fill="rgba(255,255,255,0.1)">
+                    <circle cx="165" cy="165" r="22" />
+                    <circle cx="235" cy="165" r="22" />
+                    <line x1="187" y1="165" x2="213" y2="165" />
+                </g>
+            </g>
+
+            {/* --- STETHOSCOPE --- */}
+            <g transform="translate(0, 40)">
+                <path d="M150,310 C150,360 180,400 200,400 C220,400 250,360 250,310" stroke="#475569" strokeWidth="4" fill="none" strokeLinecap="round" />
+                <circle cx="200" cy="400" r="8" fill="#94A3B8" />
+                <circle cx="200" cy="400" r="4" fill="#CBD5E1" />
+            </g>
+        </svg>
+
+        {/* 3. Glossy Overlay (Glass Effect Reflection) */}
+        <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/20 to-transparent pointer-events-none" />
+        <div className="absolute top-4 right-8 w-8 h-4 bg-white/30 rounded-full blur-sm transform -rotate-45 pointer-events-none"></div>
       </div>
 
-      {/* 4. Status Dot (Optional: Indicates Online/Active) */}
-      <div className="absolute bottom-1 right-1 w-1/6 h-1/6 bg-green-400 rounded-full border-4 border-white shadow-sm"></div>
+      {/* 4. Status Dot (Kept relative for size consistency) */}
+      <div className="absolute bottom-[5%] right-[5%] w-[15%] h-[15%] bg-green-400 rounded-full border-2 border-white shadow-sm z-20 animate-bounce-subtle">
+         <div className="absolute inset-0 bg-green-400 rounded-full animate-ping opacity-20"></div>
+      </div>
     </div>
   );
 };
